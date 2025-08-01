@@ -65,11 +65,16 @@ defmodule ModetaWeb.ODataController do
   @doc """
   Handles OData collection requests.
   Returns JSON data for the specified collection.
+  Supports $filter query parameter for server-side filtering.
   """
-  def collection(conn, %{"collection" => collection_name}) do
+  def collection(conn, %{"collection" => collection_name} = params) do
     case Collections.get_query(collection_name) do
-      {:ok, query} ->
-        case Cache.query(query) do
+      {:ok, base_query} ->
+        # Apply $filter if provided
+        filter_param = Map.get(params, "$filter")
+        final_query = Modeta.ODataFilter.apply_filter_to_query(base_query, filter_param)
+        
+        case Cache.query(final_query) do
           {:ok, result} ->
             rows = Cache.to_rows(result)
             column_names = get_column_names(result)

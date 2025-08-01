@@ -45,6 +45,7 @@ defmodule Modeta.MixProject do
       {:yaml_elixir, "~> 2.9"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_view, "~> 1.1.0-rc.0"},
+      {:nimble_parsec, "~> 1.4"},
       {:tidewave, "~> 0.2", only: :dev}
     ]
   end
