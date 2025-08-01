@@ -210,22 +210,24 @@ defmodule Modeta.ODataFilterParser do
   )
 
   # Helper function to build logical expression trees
-  defp build_logical_tree(_rest, args, context, _line, _offset, [op]) when length(args) > 1 do
-    tree = build_tree(args, op)
+  defp build_logical_tree(_rest, args, context, _line, _offset, op) when is_atom(op) do
+    tree =
+      case args do
+        [single] -> single
+        [left, right] -> {op, left, right}
+        [first | rest] -> build_tree_recursive(first, rest, op)
+      end
+
     {[tree], context}
   end
 
-  defp build_logical_tree(_rest, [single], context, _line, _offset, _op) do
-    {[single], context}
+  # Recursive helper function for building expression trees
+  defp build_tree_recursive(acc, [last], op) do
+    {op, acc, last}
   end
 
-  defp build_tree([left, right], op) do
-    {op, left, right}
-  end
-
-  defp build_tree([first | rest], op) do
-    Enum.reduce(rest, first, fn right, left ->
-      {op, left, right}
-    end)
+  defp build_tree_recursive(acc, [next | rest], op) do
+    new_acc = {op, acc, next}
+    build_tree_recursive(new_acc, rest, op)
   end
 end
