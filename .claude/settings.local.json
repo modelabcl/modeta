@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__tidewave__get_docs",
+      "mcp__tidewave__project_eval",
+      "mcp__tidewave__search_package_docs",
+      "Bash(mix test)",
+      "Bash(mix test:*)",
+      "mcp__tidewave__get_logs",
+      "Bash(mix compile)",
+      "Bash(curl:*)"
+    ],
+    "deny": []
+  }
+}
