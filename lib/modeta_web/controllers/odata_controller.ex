@@ -73,7 +73,7 @@ defmodule ModetaWeb.ODataController do
         # Apply $filter if provided
         filter_param = Map.get(params, "$filter")
         final_query = Modeta.ODataFilter.apply_filter_to_query(base_query, filter_param)
-        
+
         case Cache.query(final_query) do
           {:ok, result} ->
             rows = Cache.to_rows(result)
@@ -159,31 +159,19 @@ defmodule ModetaWeb.ODataController do
 
   # Get DuckDB table schema for a collection
   defp get_table_schema(collection_name) do
-    case Collections.get_query(collection_name) do
-      {:ok, query} ->
-        # Create a temp table or view to introspect schema
-        temp_query = "CREATE OR REPLACE VIEW temp_#{collection_name}_schema AS #{query}"
-
-        case Cache.query(temp_query) do
-          {:ok, _} ->
-            case Cache.describe_table("temp_#{collection_name}_schema") do
-              {:ok, result} ->
-                schema = extract_schema_from_describe(result)
-                # Clean up temp view
-                Cache.query("DROP VIEW IF EXISTS temp_#{collection_name}_schema")
-                {:ok, schema}
-
-              error ->
-                error
-            end
-
-          error ->
-            error
-        end
-
-      error ->
-        error
+    with {:ok, query} <- Collections.get_query(collection_name),
+         {:ok, _} <- create_temp_view(collection_name, query),
+         {:ok, result} <- Cache.describe_table("temp_#{collection_name}_schema") do
+      schema = extract_schema_from_describe(result)
+      # Clean up temp view
+      Cache.query("DROP VIEW IF EXISTS temp_#{collection_name}_schema")
+      {:ok, schema}
     end
+  end
+
+  defp create_temp_view(collection_name, query) do
+    temp_query = "CREATE OR REPLACE VIEW temp_#{collection_name}_schema AS #{query}"
+    Cache.query(temp_query)
   end
 
   # Extract schema information from DESCRIBE result
@@ -207,5 +195,4 @@ defmodule ModetaWeb.ODataController do
       []
     end
   end
-
 end

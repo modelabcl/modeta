@@ -73,8 +73,6 @@ defmodule ModetaWeb do
     end
   end
 
-
-
   def verified_routes do
     quote do
       use Phoenix.VerifiedRoutes,

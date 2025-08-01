@@ -52,13 +52,13 @@ The project is designed for 3-phase implementation:
 
 ### Development (Phase 1)
 ```elixir
-config :my_app, 
+config :my_app,
   duckdb_mode: :local_only,
   data_path: "data/"
 ```
 
 ### Staging (Phase 2)
-```elixir  
+```elixir 
 config :my_app,
   duckdb_mode: :proxy,
   gcp_project_id: "staging-project"
@@ -72,7 +72,7 @@ config :my_app,
   bigquery_tables: %{
  "productos" => %{
    dataset: "warehouse",
-   table: "dim_productos", 
+   table: "dim_productos",
    ttl: 86400,
    refresh_interval: 3600
  }
