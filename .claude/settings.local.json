@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
       "mcp__tidewave__get_docs",
@@ -9,9 +10,9 @@
       "mcp__tidewave__get_logs",
       "Bash(mix compile)",
       "Bash(curl:*)",
-      "Bash(mix credo:*)"
+      "Bash(mix credo:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
-  },
-  "$schema": "https://json.schemastore.org/claude-code-settings.json"
+  }
 }

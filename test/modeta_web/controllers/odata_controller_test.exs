@@ -400,4 +400,186 @@ defmodule ModetaWeb.ODataControllerTest do
       end)
     end
   end
+
+  describe "pagination support" do
+    test "GET /sales_test/customers?$top=3 limits results to specified number", %{conn: conn} do
+      conn = get(conn, ~p"/sales_test/customers?$top=3")
+      
+      assert response = json_response(conn, 200)
+      
+      # Should have OData structure
+      assert %{
+               "@odata.context" => "http://www.example.com:80/sales_test/$metadata#customers",
+               "value" => customers
+             } = response
+      
+      # Should return exactly 3 customers
+      assert length(customers) == 3
+      
+      # Should have @odata.nextLink since there are more results
+      assert Map.has_key?(response, "@odata.nextLink")
+      next_link = response["@odata.nextLink"]
+      assert String.contains?(next_link, "$skip=3")
+      assert String.contains?(next_link, "$top=3")
+    end
+
+    test "GET /sales_test/customers?$skip=5&$top=2 skips and limits correctly", %{conn: conn} do
+      conn = get(conn, ~p"/sales_test/customers?$skip=5&$top=2")
+      
+      assert response = json_response(conn, 200)
+      
+      # Should have OData structure
+      assert %{
+               "@odata.context" => "http://www.example.com:80/sales_test/$metadata#customers",
+               "value" => customers
+             } = response
+      
+      # Should return exactly 2 customers
+      assert length(customers) == 2
+      
+      # Should have @odata.nextLink since there are more results
+      assert Map.has_key?(response, "@odata.nextLink")
+      next_link = response["@odata.nextLink"]
+      assert String.contains?(next_link, "$skip=7")
+      assert String.contains?(next_link, "$top=2")
+      
+      # Check that we got the 6th and 7th customers (after skipping 5)
+      first_customer = List.first(customers)
+      assert first_customer["id"] == 6
+    end
+
+    test "GET /sales_test/customers?$skip=8&$top=5 returns remaining results without nextLink", %{conn: conn} do
+      conn = get(conn, ~p"/sales_test/customers?$skip=8&$top=5")
+      
+      assert response = json_response(conn, 200)
+      
+      # Should have OData structure
+      assert %{
+               "@odata.context" => "http://www.example.com:80/sales_test/$metadata#customers",
+               "value" => customers
+             } = response
+      
+      # Should return 2 customers (only 10 total, skipped 8, so 2 remaining)
+      assert length(customers) == 2
+      
+      # Should NOT have @odata.nextLink since we've reached the end
+      refute Map.has_key?(response, "@odata.nextLink")
+      
+      # Should be customers with id 9 and 10
+      customer_ids = Enum.map(customers, & &1["id"])
+      assert customer_ids == [9, 10]
+    end
+
+    test "GET /sales_test/customers with default pagination applies default page size", %{conn: conn} do
+      conn = get(conn, ~p"/sales_test/customers")
+      
+      assert response = json_response(conn, 200)
+      
+      # Should have OData structure
+      assert %{
+               "@odata.context" => "http://www.example.com:80/sales_test/$metadata#customers",
+               "value" => customers
+             } = response
+      
+      # Should return all 10 customers (since test data is smaller than default page size)
+      assert length(customers) == 10
+      
+      # Should NOT have @odata.nextLink since all results fit in one page
+      refute Map.has_key?(response, "@odata.nextLink")
+    end
+
+    test "GET /sales_test/customers?$top=15&$skip=0 respects max page size", %{conn: conn} do
+      conn = get(conn, ~p"/sales_test/customers?$top=15000&$skip=0")
+      
+      assert response = json_response(conn, 200)
+      
+      # Should still work but limit to available data (10 customers)
+      assert %{
+               "@odata.context" => "http://www.example.com:80/sales_test/$metadata#customers",
+               "value" => customers
+             } = response
+      
+      # Should return all 10 customers
+      assert length(customers) == 10
+      
+      # Should NOT have @odata.nextLink
+      refute Map.has_key?(response, "@odata.nextLink")
+    end
+
+    test "GET /sales_test/customers?$skip=5&$top=3&$filter=country eq 'USA' combines pagination with filtering", %{conn: conn} do
+      conn = get(conn, ~p"/sales_test/customers?$skip=0&$top=2&$filter=country eq 'USA'")
+      
+      assert response = json_response(conn, 200)
+      
+      # Should have OData structure
+      assert %{
+               "@odata.context" => "http://www.example.com:80/sales_test/$metadata#customers",
+               "value" => customers
+             } = response
+      
+      # Should return at most 2 USA customers
+      assert length(customers) <= 2
+      
+      # All returned customers should be from USA
+      Enum.each(customers, fn customer ->
+        assert customer["country"] == "USA"
+      end)
+      
+      # Should preserve filter in nextLink if present
+      if Map.has_key?(response, "@odata.nextLink") do
+        next_link = response["@odata.nextLink"]
+        assert String.contains?(next_link, URI.encode("country eq 'USA'"))
+      end
+    end
+
+    test "GET /sales_test/customers?$skip=0&$top=3&$select=id,name combines pagination with select", %{conn: conn} do
+      conn = get(conn, ~p"/sales_test/customers?$skip=0&$top=3&$select=id,name")
+      
+      assert response = json_response(conn, 200)
+      
+      # Should have OData structure with $select in context URL
+      assert %{
+               "@odata.context" => "http://www.example.com:80/sales_test/$metadata#customers(id,name)",
+               "value" => customers
+             } = response
+      
+      # Should return exactly 3 customers
+      assert length(customers) == 3
+      
+      # Each customer should only have selected fields
+      Enum.each(customers, fn customer ->
+        assert Map.has_key?(customer, "id")
+        assert Map.has_key?(customer, "name")
+        refute Map.has_key?(customer, "email")
+        refute Map.has_key?(customer, "country")
+        assert map_size(customer) == 2
+      end)
+      
+      # Should have @odata.nextLink preserving both pagination and select
+      assert Map.has_key?(response, "@odata.nextLink")
+      next_link = response["@odata.nextLink"]
+      assert String.contains?(next_link, "$skip=3")
+      assert String.contains?(next_link, "$top=3")
+      assert String.contains?(next_link, URI.encode("$select=id,name"))
+    end
+
+    test "invalid pagination parameters are handled gracefully", %{conn: conn} do
+      # Test with invalid $skip
+      conn = get(conn, ~p"/sales_test/customers?$skip=invalid&$top=3")
+      assert response = json_response(conn, 200)
+      assert length(response["value"]) == 3
+      
+      # Test with invalid $top
+      conn = get(conn, ~p"/sales_test/customers?$skip=0&$top=invalid")
+      assert response = json_response(conn, 200)
+      # Should use default page size, but we only have 10 customers total
+      assert length(response["value"]) == 10
+      
+      # Test with negative values
+      conn = get(conn, ~p"/sales_test/customers?$skip=-5&$top=-3")
+      assert response = json_response(conn, 200)
+      # Should default to skip=0 and default page size
+      assert length(response["value"]) == 10
+    end
+  end
 end

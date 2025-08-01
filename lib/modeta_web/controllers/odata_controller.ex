@@ -118,12 +118,14 @@ defmodule ModetaWeb.ODataController do
   defp handle_collection_request(conn, group_name, collection_name, params) do
     case Collections.get_query(group_name, collection_name) do
       {:ok, base_query} ->
-        # Apply $filter, $expand, and $select if provided
+        # Apply $filter, $expand, $select, and pagination if provided
         filter_param = Map.get(params, "$filter")
         expand_param = Map.get(params, "$expand")
         select_param = Map.get(params, "$select")
+        skip_param = Map.get(params, "$skip")
+        top_param = Map.get(params, "$top")
 
-        # Build query with $expand and $select support
+        # Build query with all OData options support
         final_query =
           build_query_with_options(
             base_query,
@@ -131,7 +133,9 @@ defmodule ModetaWeb.ODataController do
             collection_name,
             filter_param,
             expand_param,
-            select_param
+            select_param,
+            skip_param,
+            top_param
           )
 
         case Cache.query(final_query) do
@@ -159,11 +163,17 @@ defmodule ModetaWeb.ODataController do
             # Build context URL with $select parameters if applicable
             context_url = build_context_url(base_url, collection_name, select_param)
 
-            # Match JS server format - @odata.context first, then value
-            response = %{
-              "@odata.context" => context_url,
-              "value" => formatted_rows
-            }
+            # Check if we need pagination and build @odata.nextLink
+            response = build_paginated_response(
+              context_url,
+              formatted_rows,
+              conn,
+              group_name,
+              collection_name,
+              params,
+              skip_param,
+              top_param
+            )
 
             # Get OData content type from Accept header
             accept_header = get_req_header(conn, "accept") |> List.first()
@@ -205,7 +215,9 @@ defmodule ModetaWeb.ODataController do
             collection_name,
             nil,
             expand_param,
-            select_param
+            select_param,
+            nil,
+            nil
           )
 
         case Cache.query(final_query) do
@@ -521,6 +533,69 @@ defmodule ModetaWeb.ODataController do
     |> Enum.into(%{})
   end
 
+  # Build paginated response with @odata.nextLink if needed
+  defp build_paginated_response(context_url, rows, conn, group_name, collection_name, params, skip_param, top_param) do
+    # Get configuration values
+    default_page_size = Application.get_env(:modeta, :default_page_size, 1000)
+    max_page_size = Application.get_env(:modeta, :max_page_size, 5000)
+    
+    # Parse current pagination parameters
+    current_skip = case skip_param do
+      nil -> 0
+      skip_str when is_binary(skip_str) ->
+        case Integer.parse(skip_str) do
+          {num, ""} when num >= 0 -> num
+          _ -> 0
+        end
+      skip_num when is_integer(skip_num) and skip_num >= 0 -> skip_num
+      _ -> 0
+    end
+    
+    current_top = case top_param do
+      nil -> default_page_size
+      top_str when is_binary(top_str) ->
+        case Integer.parse(top_str) do
+          {num, ""} when num > 0 -> min(num, max_page_size)
+          _ -> default_page_size
+        end
+      top_num when is_integer(top_num) and top_num > 0 -> min(top_num, max_page_size)
+      _ -> default_page_size
+    end
+    
+    # Base response
+    base_response = %{
+      "@odata.context" => context_url,
+      "value" => rows
+    }
+    
+    # If we got exactly the page size, there might be more results
+    if length(rows) == current_top do
+      # Build next page URL
+      next_skip = current_skip + current_top
+      next_link = build_next_link_url(conn, group_name, collection_name, params, next_skip, current_top)
+      
+      Map.put(base_response, "@odata.nextLink", next_link)
+    else
+      # No more results, return base response
+      base_response
+    end
+  end
+
+  # Build the URL for the next page
+  defp build_next_link_url(conn, group_name, collection_name, params, next_skip, current_top) do
+    # Build base URL
+    base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}/#{group_name}/#{collection_name}"
+    
+    # Build query parameters, replacing $skip and preserving others
+    query_params = params
+    |> Map.put("$skip", Integer.to_string(next_skip))
+    |> Map.put("$top", Integer.to_string(current_top))
+    |> Enum.map(fn {key, value} -> "#{key}=#{URI.encode(value)}" end)
+    |> Enum.join("&")
+    
+    "#{base_url}?#{query_params}"
+  end
+
   # Build OData context URL with $select parameter support
   defp build_context_url(base_url, entity_set, nil), do: "#{base_url}/$metadata##{entity_set}"
 
@@ -538,6 +613,40 @@ defmodule ModetaWeb.ODataController do
     else
       "#{base_url}/$metadata##{entity_set}"
     end
+  end
+
+  # Apply pagination to query with LIMIT and OFFSET
+  defp apply_pagination_to_query(base_query, skip_param, top_param) do
+    # Get configuration values
+    default_page_size = Application.get_env(:modeta, :default_page_size, 1000)
+    max_page_size = Application.get_env(:modeta, :max_page_size, 5000)
+    
+    # Parse skip parameter (defaults to 0)
+    skip = case skip_param do
+      nil -> 0
+      skip_str when is_binary(skip_str) ->
+        case Integer.parse(skip_str) do
+          {num, ""} when num >= 0 -> num
+          _ -> 0
+        end
+      skip_num when is_integer(skip_num) and skip_num >= 0 -> skip_num
+      _ -> 0
+    end
+    
+    # Parse top parameter (defaults to default_page_size)
+    top = case top_param do
+      nil -> default_page_size
+      top_str when is_binary(top_str) ->
+        case Integer.parse(top_str) do
+          {num, ""} when num > 0 -> min(num, max_page_size)
+          _ -> default_page_size
+        end
+      top_num when is_integer(top_num) and top_num > 0 -> min(top_num, max_page_size)
+      _ -> default_page_size
+    end
+    
+    # Apply LIMIT and OFFSET to query
+    "SELECT * FROM (#{base_query}) AS paginated_data LIMIT #{top} OFFSET #{skip}"
   end
 
   # Apply $select to query by wrapping with SELECT clause containing only requested columns
@@ -558,14 +667,16 @@ defmodule ModetaWeb.ODataController do
     end
   end
 
-  # Build query with $expand and $select support
+  # Build query with $expand, $select, and pagination support
   defp build_query_with_options(
          base_query,
          group_name,
          collection_name,
          filter_param,
          expand_param,
-         select_param
+         select_param,
+         skip_param,
+         top_param
        ) do
     # Get collection configuration to find references
     case Collections.get_collection(group_name, collection_name) do
@@ -587,11 +698,14 @@ defmodule ModetaWeb.ODataController do
             query_with_joins
           end
 
-        # Step 3: Apply $filter last
-        Modeta.ODataFilter.apply_filter_to_query(query_with_select, filter_param)
+        # Step 3: Apply $filter 
+        query_with_filter = Modeta.ODataFilter.apply_filter_to_query(query_with_select, filter_param)
+        
+        # Step 4: Apply pagination (LIMIT/OFFSET) last
+        apply_pagination_to_query(query_with_filter, skip_param, top_param)
 
       {:error, :not_found} ->
-        # Fallback: apply $select and $filter to base query
+        # Fallback: apply $select, $filter, and pagination to base query
         query_with_select =
           if select_param do
             apply_select_to_query(base_query, select_param)
@@ -599,7 +713,8 @@ defmodule ModetaWeb.ODataController do
             base_query
           end
 
-        Modeta.ODataFilter.apply_filter_to_query(query_with_select, filter_param)
+        query_with_filter = Modeta.ODataFilter.apply_filter_to_query(query_with_select, filter_param)
+        apply_pagination_to_query(query_with_filter, skip_param, top_param)
     end
   end
 
