@@ -7,7 +7,11 @@ defmodule ModetaWeb.ODataHTML do
   # Generate metadata XML using string interpolation (HEEx has issues with XML attributes)
   def metadata(%{collection_schemas: collection_schemas}) do
     entity_types =
-      Enum.map_join(collection_schemas, "", fn %{name: name, schema: schema, references: references} ->
+      Enum.map_join(collection_schemas, "", fn %{
+                                                 name: name,
+                                                 schema: schema,
+                                                 references: references
+                                               } ->
         key_xml = render_key(schema)
         properties_xml = Enum.map_join(schema, "", &render_property/1)
         navigation_properties_xml = render_navigation_properties(references, collection_schemas)
@@ -44,6 +48,7 @@ defmodule ModetaWeb.ODataHTML do
 
   # Render navigation properties based on references
   defp render_navigation_properties([], _collection_schemas), do: ""
+
   defp render_navigation_properties(references, collection_schemas) do
     Enum.map_join(references, "", fn reference ->
       render_single_navigation_property(reference, collection_schemas)
@@ -51,28 +56,32 @@ defmodule ModetaWeb.ODataHTML do
   end
 
   # Render a single navigation property
-  defp render_single_navigation_property(%{"col" => _column, "ref" => ref_spec}, collection_schemas) do
+  defp render_single_navigation_property(
+         %{"col" => _column, "ref" => ref_spec},
+         collection_schemas
+       ) do
     case parse_reference_spec(ref_spec) do
       {:ok, {ref_table, _ref_column}} ->
         # Find the target entity type - strip schema prefix if present
         target_table = ref_table |> String.split(".") |> List.last()
-        
+
         # Check if the target collection exists in our schemas
-        target_exists = Enum.any?(collection_schemas, fn schema ->
-          String.downcase(schema.name) == String.downcase(target_table)
-        end)
-        
+        target_exists =
+          Enum.any?(collection_schemas, fn schema ->
+            String.downcase(schema.name) == String.downcase(target_table)
+          end)
+
         if target_exists do
           # Create navigation property name by capitalizing the target table
           nav_prop_name = String.capitalize(target_table)
           target_type = "Default.#{String.capitalize(target_table)}"
-          
+
           ~s(<NavigationProperty Name="#{nav_prop_name}" Type="#{target_type}" Nullable="true"/>)
         else
           # Don't create navigation property if target doesn't exist
           ""
         end
-        
+
       {:error, _reason} ->
         # Skip invalid reference specifications
         ""

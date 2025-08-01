@@ -10,27 +10,27 @@ defmodule Modeta.Cache do
   """
   def query(sql) when is_binary(sql) do
     require Logger
-    
+
     # Debug log every SQL query
     Logger.debug("[SQL DEBUG] Executing query: #{sql}")
-    
+
     start_time = System.monotonic_time(:millisecond)
-    
+
     case Adbc.Connection.query(Modeta.Conn, sql) do
-      {:ok, result} -> 
+      {:ok, result} ->
         end_time = System.monotonic_time(:millisecond)
         duration = end_time - start_time
-        
+
         materialized_result = Adbc.Result.materialize(result)
         row_count = get_result_row_count(materialized_result)
-        
+
         Logger.debug("[SQL DEBUG] Query completed in #{duration}ms, returned #{row_count} rows")
         {:ok, materialized_result}
-        
-      error -> 
+
+      error ->
         end_time = System.monotonic_time(:millisecond)
         duration = end_time - start_time
-        
+
         Logger.error("[SQL DEBUG] Query failed after #{duration}ms: #{inspect(error)}")
         error
     end

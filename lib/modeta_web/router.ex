@@ -15,7 +15,7 @@ defmodule ModetaWeb.Router do
 
     # Dynamic routes for OData collections within the group
     get("/:collection", ODataController, :collection)
-    
+
     # Navigation property routes (e.g., /purchases(1)/Customers)
     # The key will be captured as part of the collection parameter and parsed later
     get("/:collection_with_key/:navigation_property", ODataController, :navigation_property)

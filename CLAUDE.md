@@ -129,3 +129,6 @@ The OData v4 server implementation includes:
 - Active DuckDB connections
 - BigQuery sync errors
 - Memory usage per table
+
+## Development Workflow
+- Before committing, run mix format, credo and tests

@@ -67,7 +67,11 @@ defmodule ModetaWeb.ODataController do
   Handles OData navigation property requests.
   Returns related entities via foreign key relationships.
   """
-  def navigation_property(conn, %{"collection_group" => group_name, "collection_with_key" => collection_with_key, "navigation_property" => nav_prop}) do
+  def navigation_property(conn, %{
+        "collection_group" => group_name,
+        "collection_with_key" => collection_with_key,
+        "navigation_property" => nav_prop
+      }) do
     # Parse collection name and key from format "purchases(1)"
     case parse_collection_and_key(collection_with_key) do
       {:ok, collection_name, key} ->
@@ -75,13 +79,13 @@ defmodule ModetaWeb.ODataController do
         case Collections.get_collection(group_name, collection_name) do
           {:ok, collection_config} ->
             handle_navigation_request(conn, group_name, collection_config, key, nav_prop)
-          
+
           {:error, :not_found} ->
             conn
             |> put_status(:not_found)
             |> json(%{error: %{message: "Collection '#{collection_name}' not found"}})
         end
-      
+
       {:error, reason} ->
         conn
         |> put_status(:bad_request)
@@ -94,13 +98,16 @@ defmodule ModetaWeb.ODataController do
   Returns JSON data for the specified collection.
   Supports $filter query parameter for server-side filtering.
   """
-  def collection(conn, %{"collection_group" => group_name, "collection" => collection_param} = params) do
+  def collection(
+        conn,
+        %{"collection_group" => group_name, "collection" => collection_param} = params
+      ) do
     # Check if this is an entity-by-key request (e.g., "customers(1)")
     case parse_collection_and_key(collection_param) do
       {:ok, collection_name, key} ->
         # Handle entity by key request
         handle_entity_by_key_request(conn, group_name, collection_name, key, params)
-      
+
       {:error, _} ->
         # Handle regular collection request
         handle_collection_request(conn, group_name, collection_param, params)
@@ -111,12 +118,21 @@ defmodule ModetaWeb.ODataController do
   defp handle_collection_request(conn, group_name, collection_name, params) do
     case Collections.get_query(group_name, collection_name) do
       {:ok, base_query} ->
-        # Apply $filter if provided
+        # Apply $filter, $expand, and $select if provided
         filter_param = Map.get(params, "$filter")
         expand_param = Map.get(params, "$expand")
-        
-        # Build query with $expand support
-        final_query = build_query_with_expand(base_query, group_name, collection_name, filter_param, expand_param)
+        select_param = Map.get(params, "$select")
+
+        # Build query with $expand and $select support
+        final_query =
+          build_query_with_options(
+            base_query,
+            group_name,
+            collection_name,
+            filter_param,
+            expand_param,
+            select_param
+          )
 
         case Cache.query(final_query) do
           {:ok, result} ->
@@ -127,15 +143,25 @@ defmodule ModetaWeb.ODataController do
             base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}/#{group_name}"
 
             # Process expanded data if $expand was requested
-            formatted_rows = if expand_param do
-              format_rows_with_expansion(rows, column_names, group_name, collection_name, expand_param)
-            else
-              format_rows_as_objects(rows, column_names)
-            end
+            formatted_rows =
+              if expand_param do
+                format_rows_with_expansion(
+                  rows,
+                  column_names,
+                  group_name,
+                  collection_name,
+                  expand_param
+                )
+              else
+                format_rows_as_objects(rows, column_names)
+              end
+
+            # Build context URL with $select parameters if applicable
+            context_url = build_context_url(base_url, collection_name, select_param)
 
             # Match JS server format - @odata.context first, then value
             response = %{
-              "@odata.context" => "#{base_url}/$metadata##{collection_name}",
+              "@odata.context" => context_url,
               "value" => formatted_rows
             }
 
@@ -167,14 +193,20 @@ defmodule ModetaWeb.ODataController do
       {:ok, base_query} ->
         # Add WHERE clause to filter by primary key (assuming 'id' column)
         entity_query = "#{base_query} WHERE id = #{key}"
-        
-        # Apply $expand if provided
+
+        # Apply $expand and $select if provided
         expand_param = Map.get(params, "$expand")
-        final_query = if expand_param do
-          build_query_with_expand(entity_query, group_name, collection_name, nil, expand_param)
-        else
-          entity_query
-        end
+        select_param = Map.get(params, "$select")
+
+        final_query =
+          build_query_with_options(
+            entity_query,
+            group_name,
+            collection_name,
+            nil,
+            expand_param,
+            select_param
+          )
 
         case Cache.query(final_query) do
           {:ok, result} ->
@@ -185,20 +217,32 @@ defmodule ModetaWeb.ODataController do
               [single_row] ->
                 # Build absolute URL for context
                 base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}/#{group_name}"
-                
+
                 # Process expanded data if requested
-                entity = if expand_param do
-                  format_rows_with_expansion([single_row], column_names, group_name, collection_name, expand_param)
-                  |> List.first()
-                else
-                  format_single_row_as_object(single_row, column_names)
-                end
+                entity =
+                  if expand_param do
+                    format_rows_with_expansion(
+                      [single_row],
+                      column_names,
+                      group_name,
+                      collection_name,
+                      expand_param
+                    )
+                    |> List.first()
+                  else
+                    format_single_row_as_object(single_row, column_names)
+                  end
+
+                # Build context URL with $select parameters if applicable
+                context_url =
+                  build_context_url(base_url, "#{collection_name}/$entity", select_param)
 
                 # OData single entity response format
-                response = %{
-                  "@odata.context" => "#{base_url}/$metadata##{collection_name}/$entity"
-                }
-                |> Map.merge(entity)
+                response =
+                  %{
+                    "@odata.context" => context_url
+                  }
+                  |> Map.merge(entity)
 
                 # Get OData content type from Accept header
                 accept_header = get_req_header(conn, "accept") |> List.first()
@@ -267,16 +311,16 @@ defmodule ModetaWeb.ODataController do
   # Get schema information for collections in a specific group
   defp get_collection_schemas_for_group(group_name, collection_names) do
     collections = Collections.get_collections_for_group(group_name)
-    
+
     Enum.map(collection_names, fn collection_name ->
       collection_config = Enum.find(collections, &(&1.name == collection_name))
-      
+
       case get_table_schema_for_group(group_name, collection_name) do
         {:ok, schema} ->
           %{
-            name: collection_name, 
+            name: collection_name,
             schema: schema,
-            references: collection_config && collection_config.references || []
+            references: (collection_config && collection_config.references) || []
           }
 
         {:error, _reason} ->
@@ -284,7 +328,7 @@ defmodule ModetaWeb.ODataController do
           %{
             name: collection_name,
             schema: [%{name: "Id", type: "VARCHAR"}, %{name: "Name", type: "VARCHAR"}],
-            references: collection_config && collection_config.references || []
+            references: (collection_config && collection_config.references) || []
           }
       end
     end)
@@ -343,7 +387,7 @@ defmodule ModetaWeb.ODataController do
     case find_reference_for_navigation(collection_config.references, nav_prop) do
       {:ok, reference} ->
         execute_navigation_query(conn, group_name, collection_config, key, reference, nav_prop)
-      
+
       {:error, :no_reference} ->
         conn
         |> put_status(:not_found)
@@ -355,16 +399,19 @@ defmodule ModetaWeb.ODataController do
   defp find_reference_for_navigation(references, nav_prop) do
     # Navigation property name should match the referenced table name
     # For reference like "col: customer_id, ref: customers(id)", nav_prop would be "Customers"
-    target_ref = Enum.find(references, fn %{"ref" => ref_spec} ->
-      case parse_reference_spec(ref_spec) do
-        {:ok, {ref_table, _}} ->
-          # Strip schema prefix and compare with navigation property (case insensitive)
-          table_name = ref_table |> String.split(".") |> List.last()
-          String.downcase(String.capitalize(table_name)) == String.downcase(nav_prop)
-        _ -> false
-      end
-    end)
-    
+    target_ref =
+      Enum.find(references, fn %{"ref" => ref_spec} ->
+        case parse_reference_spec(ref_spec) do
+          {:ok, {ref_table, _}} ->
+            # Strip schema prefix and compare with navigation property (case insensitive)
+            table_name = ref_table |> String.split(".") |> List.last()
+            String.downcase(String.capitalize(table_name)) == String.downcase(nav_prop)
+
+          _ ->
+            false
+        end
+      end)
+
     case target_ref do
       nil -> {:error, :no_reference}
       ref -> {:ok, ref}
@@ -374,17 +421,18 @@ defmodule ModetaWeb.ODataController do
   # Execute the SQL query to get related entities
   defp execute_navigation_query(conn, group_name, collection_config, key, reference, nav_prop) do
     %{"col" => foreign_key_column, "ref" => ref_spec} = reference
-    
+
     case parse_reference_spec(ref_spec) do
       {:ok, {ref_table, ref_column}} ->
         # Build the JOIN query to get related entities
-        qualified_ref_table = if String.contains?(ref_table, ".") do
-          ref_table
-        else
-          "#{group_name}.#{ref_table}"
-        end
-        
-        # Query: SELECT target.* FROM target_table target 
+        qualified_ref_table =
+          if String.contains?(ref_table, ".") do
+            ref_table
+          else
+            "#{group_name}.#{ref_table}"
+          end
+
+        # Query: SELECT target.* FROM target_table target
         #        JOIN source_table source ON target.ref_column = source.foreign_key_column
         #        WHERE source.primary_key = key
         query = """
@@ -393,62 +441,64 @@ defmodule ModetaWeb.ODataController do
         JOIN #{collection_config.table_name} source ON target.#{ref_column} = source.#{foreign_key_column}
         WHERE source.id = #{key}
         """
-        
+
         case Cache.query(query) do
           {:ok, result} ->
             rows = Cache.to_rows(result)
             column_names = get_column_names(result)
-            
+
             # Build response - navigation properties return single entity or collection
             # For now, assume single entity (most common case)
             case rows do
               [single_row] ->
                 entity = format_single_row_as_object(single_row, column_names)
                 base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}/#{group_name}"
-                
-                response = %{
-                  "@odata.context" => "#{base_url}/$metadata##{String.downcase(nav_prop)}/$entity"
-                }
-                |> Map.merge(entity)
-                
+
+                response =
+                  %{
+                    "@odata.context" =>
+                      "#{base_url}/$metadata##{String.downcase(nav_prop)}/$entity"
+                  }
+                  |> Map.merge(entity)
+
                 accept_header = get_req_header(conn, "accept") |> List.first()
                 content_type = get_odata_content_type(accept_header)
-                
+
                 conn
                 |> put_resp_header("odata-version", "4.0")
                 |> put_resp_content_type(content_type)
                 |> json(response)
-                
+
               [] ->
                 conn
                 |> put_status(:not_found)
                 |> json(%{error: %{message: "Related entity not found"}})
-                
+
               multiple_rows ->
                 # Multiple related entities - return as collection
                 entities = format_rows_as_objects(multiple_rows, column_names)
                 base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}/#{group_name}"
-                
+
                 response = %{
                   "@odata.context" => "#{base_url}/$metadata##{String.downcase(nav_prop)}",
                   "value" => entities
                 }
-                
+
                 accept_header = get_req_header(conn, "accept") |> List.first()
                 content_type = get_odata_content_type(accept_header)
-                
+
                 conn
                 |> put_resp_header("odata-version", "4.0")
                 |> put_resp_content_type(content_type)
                 |> json(response)
             end
-            
+
           {:error, reason} ->
             conn
             |> put_status(:internal_server_error)
             |> json(%{error: %{message: "Navigation query failed: #{inspect(reason)}"}})
         end
-        
+
       {:error, reason} ->
         conn
         |> put_status(:internal_server_error)
@@ -471,28 +521,85 @@ defmodule ModetaWeb.ODataController do
     |> Enum.into(%{})
   end
 
-  # Build query with $expand support (LEFT JOIN for expanded navigation properties)
-  defp build_query_with_expand(base_query, _group_name, _collection_name, filter_param, nil) do
-    # No $expand, just apply filter
-    Modeta.ODataFilter.apply_filter_to_query(base_query, filter_param)
+  # Build OData context URL with $select parameter support
+  defp build_context_url(base_url, entity_set, nil), do: "#{base_url}/$metadata##{entity_set}"
+
+  defp build_context_url(base_url, entity_set, select_param) do
+    # Parse selected columns
+    selected_columns =
+      select_param
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+
+    if length(selected_columns) > 0 do
+      select_clause = Enum.join(selected_columns, ",")
+      "#{base_url}/$metadata##{entity_set}(#{select_clause})"
+    else
+      "#{base_url}/$metadata##{entity_set}"
+    end
   end
 
-  defp build_query_with_expand(base_query, group_name, collection_name, filter_param, expand_param) do
+  # Apply $select to query by wrapping with SELECT clause containing only requested columns
+  defp apply_select_to_query(base_query, select_param) do
+    # Parse $select parameter - comma-separated list of column names
+    selected_columns =
+      select_param
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+
+    if length(selected_columns) > 0 do
+      column_list = Enum.join(selected_columns, ", ")
+      "SELECT #{column_list} FROM (#{base_query}) AS selected_data"
+    else
+      # If no valid columns specified, return original query
+      base_query
+    end
+  end
+
+  # Build query with $expand and $select support
+  defp build_query_with_options(
+         base_query,
+         group_name,
+         collection_name,
+         filter_param,
+         expand_param,
+         select_param
+       ) do
     # Get collection configuration to find references
     case Collections.get_collection(group_name, collection_name) do
       {:ok, collection_config} ->
-        # Parse $expand parameter (simple implementation - single navigation property)
-        expanded_nav_props = String.split(expand_param, ",") |> Enum.map(&String.trim/1)
-        
-        # Build query with LEFT JOINs for each expanded navigation property
-        query_with_joins = build_joins_for_expand(base_query, collection_config, expanded_nav_props, group_name)
-        
-        # Apply filter to the expanded query
-        Modeta.ODataFilter.apply_filter_to_query(query_with_joins, filter_param)
-      
+        # Step 1: Apply $expand (LEFT JOINs) if provided
+        query_with_joins =
+          if expand_param do
+            expanded_nav_props = String.split(expand_param, ",") |> Enum.map(&String.trim/1)
+            build_joins_for_expand(base_query, collection_config, expanded_nav_props, group_name)
+          else
+            base_query
+          end
+
+        # Step 2: Apply $select (column filtering) if provided
+        query_with_select =
+          if select_param do
+            apply_select_to_query(query_with_joins, select_param)
+          else
+            query_with_joins
+          end
+
+        # Step 3: Apply $filter last
+        Modeta.ODataFilter.apply_filter_to_query(query_with_select, filter_param)
+
       {:error, :not_found} ->
-        # Fallback to base query if collection not found
-        Modeta.ODataFilter.apply_filter_to_query(base_query, filter_param)
+        # Fallback: apply $select and $filter to base query
+        query_with_select =
+          if select_param do
+            apply_select_to_query(base_query, select_param)
+          else
+            base_query
+          end
+
+        Modeta.ODataFilter.apply_filter_to_query(query_with_select, filter_param)
     end
   end
 
@@ -501,8 +608,14 @@ defmodule ModetaWeb.ODataController do
     Enum.reduce(expanded_nav_props, base_query, fn nav_prop, query ->
       case find_reference_for_navigation(collection_config.references, nav_prop) do
         {:ok, reference} ->
-          add_join_for_navigation_property(query, reference, nav_prop, group_name, collection_config.table_name)
-        
+          add_join_for_navigation_property(
+            query,
+            reference,
+            nav_prop,
+            group_name,
+            collection_config.table_name
+          )
+
         {:error, :no_reference} ->
           # Skip unknown navigation properties
           query
@@ -511,21 +624,28 @@ defmodule ModetaWeb.ODataController do
   end
 
   # Add LEFT JOIN for a specific navigation property
-  defp add_join_for_navigation_property(base_query, reference, nav_prop, group_name, _source_table) do
+  defp add_join_for_navigation_property(
+         base_query,
+         reference,
+         nav_prop,
+         group_name,
+         _source_table
+       ) do
     %{"col" => foreign_key_column, "ref" => ref_spec} = reference
-    
+
     case parse_reference_spec(ref_spec) do
       {:ok, {ref_table, ref_column}} ->
         # Ensure reference table has schema prefix
-        qualified_ref_table = if String.contains?(ref_table, ".") do
-          ref_table
-        else
-          "#{group_name}.#{ref_table}"
-        end
-        
+        qualified_ref_table =
+          if String.contains?(ref_table, ".") do
+            ref_table
+          else
+            "#{group_name}.#{ref_table}"
+          end
+
         # Build alias for the joined table
         join_alias = String.downcase(nav_prop)
-        
+
         # Get target table columns for proper aliasing
         case get_table_columns_for_expand(qualified_ref_table, join_alias) do
           {:ok, aliased_columns} ->
@@ -536,7 +656,7 @@ defmodule ModetaWeb.ODataController do
             LEFT JOIN #{qualified_ref_table} AS #{join_alias} 
             ON main.#{foreign_key_column} = #{join_alias}.#{ref_column}
             """
-            
+
           {:error, _} ->
             # Fallback to simple join without column aliasing
             """
@@ -546,7 +666,7 @@ defmodule ModetaWeb.ODataController do
             ON main.#{foreign_key_column} = #{join_alias}.#{ref_column}
             """
         end
-      
+
       {:error, _} ->
         # Skip invalid reference specifications
         base_query
@@ -559,24 +679,25 @@ defmodule ModetaWeb.ODataController do
     case Collections.get_collection(group_name, collection_name) do
       {:ok, collection_config} ->
         expanded_nav_props = String.split(expand_param, ",") |> Enum.map(&String.trim/1)
-        
+
         Enum.map(rows, fn row ->
           base_entity = format_single_row_as_object(row, column_names)
-          
+
           # Add expanded navigation properties
-          expanded_entity = Enum.reduce(expanded_nav_props, base_entity, fn nav_prop, entity ->
-            case find_reference_for_navigation(collection_config.references, nav_prop) do
-              {:ok, _reference} ->
-                add_expanded_property_to_entity(entity, nav_prop, row, column_names)
-              
-              {:error, :no_reference} ->
-                entity
-            end
-          end)
-          
+          expanded_entity =
+            Enum.reduce(expanded_nav_props, base_entity, fn nav_prop, entity ->
+              case find_reference_for_navigation(collection_config.references, nav_prop) do
+                {:ok, _reference} ->
+                  add_expanded_property_to_entity(entity, nav_prop, row, column_names)
+
+                {:error, :no_reference} ->
+                  entity
+              end
+            end)
+
           expanded_entity
         end)
-      
+
       {:error, :not_found} ->
         # Fallback to basic formatting
         format_rows_as_objects(rows, column_names)
@@ -586,21 +707,24 @@ defmodule ModetaWeb.ODataController do
   # Get table columns for $expand with proper aliasing
   defp get_table_columns_for_expand(qualified_table, alias) do
     query = "DESCRIBE #{qualified_table}"
-    
+
     case Cache.query(query) do
       {:ok, result} ->
         rows = Cache.to_rows(result)
         # Generate aliased column list: alias.col_name as alias_col_name
-        aliased_columns = Enum.map_join(rows, ", ", fn row ->
-          case row do
-            [col_name, _type | _] when is_binary(col_name) ->
-              "#{alias}.#{col_name} as #{alias}_#{col_name}"
-            _ ->
-              "#{alias}.*"
-          end
-        end)
+        aliased_columns =
+          Enum.map_join(rows, ", ", fn row ->
+            case row do
+              [col_name, _type | _] when is_binary(col_name) ->
+                "#{alias}.#{col_name} as #{alias}_#{col_name}"
+
+              _ ->
+                "#{alias}.*"
+            end
+          end)
+
         {:ok, aliased_columns}
-        
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -611,30 +735,34 @@ defmodule ModetaWeb.ODataController do
     # This is a simplified implementation
     # In a full implementation, we'd need to separate columns by table alias
     # For now, we'll create a placeholder expanded property
-    
+
     # Find columns that likely belong to the expanded entity
     join_alias = String.downcase(nav_prop)
-    expanded_columns = Enum.filter(column_names, fn col_name ->
-      String.starts_with?(String.downcase(col_name), join_alias <> "_") or
-      String.contains?(String.downcase(col_name), join_alias)
-    end)
-    
+
+    expanded_columns =
+      Enum.filter(column_names, fn col_name ->
+        String.starts_with?(String.downcase(col_name), join_alias <> "_") or
+          String.contains?(String.downcase(col_name), join_alias)
+      end)
+
     if length(expanded_columns) > 0 do
       # Extract expanded entity data
-      expanded_data = expanded_columns
-      |> Enum.map(fn col_name ->
-        col_index = Enum.find_index(column_names, &(&1 == col_name))
-        if col_index do
-          # Remove alias prefix from column name
-          clean_col_name = String.replace(col_name, ~r/^#{join_alias}_?/i, "")
-          {clean_col_name, Enum.at(row, col_index)}
-        else
-          nil
-        end
-      end)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.into(%{})
-      
+      expanded_data =
+        expanded_columns
+        |> Enum.map(fn col_name ->
+          col_index = Enum.find_index(column_names, &(&1 == col_name))
+
+          if col_index do
+            # Remove alias prefix from column name
+            clean_col_name = String.replace(col_name, ~r/^#{join_alias}_?/i, "")
+            {clean_col_name, Enum.at(row, col_index)}
+          else
+            nil
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.into(%{})
+
       # Only add if we have actual data
       if map_size(expanded_data) > 0 do
         Map.put(entity, nav_prop, expanded_data)

@@ -7,6 +7,10 @@ config :modeta, ModetaWeb.Endpoint,
   secret_key_base: "q88/Yqa2DK6Au76zQy2ROfdmTk9m13HXxgtmgFoJjcgysr/HOdqUf8KwDwdhBApM",
   server: false
 
+# Use separate collections file for testing
+config :modeta,
+  collections_file: "config/collections_test.yml"
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

@@ -8,7 +8,8 @@
 import Config
 
 config :modeta,
-  generators: [timestamp_type: :utc_datetime]
+  generators: [timestamp_type: :utc_datetime],
+  collections_file: "config/collections.yml"
 
 # Configures the endpoint
 config :modeta, ModetaWeb.Endpoint,

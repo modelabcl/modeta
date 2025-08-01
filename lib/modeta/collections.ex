@@ -4,14 +4,14 @@ defmodule Modeta.Collections do
   Supports hierarchical collection groups (e.g., sales.customers, analytics.reports).
   """
 
-  @collections_file "config/collections.yml"
-
   @doc """
   Loads collections configuration from YAML file.
   Returns a map with collection groups as keys and collections as values.
   """
   def load_config do
-    case YamlElixir.read_from_file(@collections_file) do
+    collections_file = Application.get_env(:modeta, :collections_file, "config/collections.yml")
+
+    case YamlElixir.read_from_file(collections_file) do
       {:ok, %{"collections" => collections}} ->
         collections
         |> Enum.map(fn {group_name, group_collections} ->
@@ -82,41 +82,47 @@ defmodule Modeta.Collections do
   """
   def get_query(group_name, collection_name) do
     case get_collection(group_name, collection_name) do
-      {:ok, collection} -> 
+      {:ok, collection} ->
         # If materialized and table exists, use the table; otherwise use origin query
         if collection.materialized and table_exists?(collection.table_name) do
           {:ok, "SELECT * FROM #{collection.table_name}"}
         else
           {:ok, collection.origin}
         end
-      error -> error
+
+      error ->
+        error
     end
   end
 
   # Check if a materialized table exists (handles schema-qualified names)
   defp table_exists?(qualified_table_name) do
-    query = case String.split(qualified_table_name, ".") do
-      [schema, table] ->
-        """
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = '#{schema}' AND table_name = '#{table}'
-        """
-        
-      [table] ->
-        "SELECT 1 FROM information_schema.tables WHERE table_name = '#{table}'"
-        
-      _ ->
-        # Invalid format
-        nil
-    end
-    
+    query =
+      case String.split(qualified_table_name, ".") do
+        [schema, table] ->
+          """
+          SELECT 1 FROM information_schema.tables 
+          WHERE table_schema = '#{schema}' AND table_name = '#{table}'
+          """
+
+        [table] ->
+          "SELECT 1 FROM information_schema.tables WHERE table_name = '#{table}'"
+
+        _ ->
+          # Invalid format
+          nil
+      end
+
     case query do
-      nil -> false
-      q -> 
+      nil ->
+        false
+
+      q ->
         case Modeta.Cache.query(q) do
           {:ok, result} ->
             rows = Modeta.Cache.to_rows(result)
             length(rows) > 0
+
           {:error, _} ->
             false
         end
