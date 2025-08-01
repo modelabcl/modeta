@@ -58,7 +58,7 @@ config :my_app,
 ```
 
 ### Staging (Phase 2)
-```elixir 
+```elixir
 config :my_app,
   duckdb_mode: :proxy,
   gcp_project_id: "staging-project"

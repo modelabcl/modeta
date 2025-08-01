@@ -2,16 +2,16 @@ defmodule ModetaWeb.ODataControllerTest do
   use ModetaWeb.ConnCase, async: false
 
   describe "collection endpoint" do
-    test "GET /api/customers returns customer data", %{conn: conn} do
-      # Make request to customers collection
-      conn = get(conn, ~p"/api/customers")
+    test "GET /sales/customers returns customer data", %{conn: conn} do
+      # Make request to customers collection in sales group
+      conn = get(conn, ~p"/sales/customers")
 
       # Should return 200 OK
       assert response = json_response(conn, 200)
 
       # Should have OData structure
       assert %{
-               "@odata.context" => "$metadata#customers",
+               "@odata.context" => "http://www.example.com:80/sales/$metadata#customers",
                "value" => customers
              } = response
 
@@ -40,8 +40,8 @@ defmodule ModetaWeb.ODataControllerTest do
       end)
     end
 
-    test "GET /api/nonexistent returns 404", %{conn: conn} do
-      conn = get(conn, ~p"/api/nonexistent")
+    test "GET /sales/nonexistent returns 404", %{conn: conn} do
+      conn = get(conn, ~p"/sales/nonexistent")
 
       assert response = json_response(conn, 404)
       assert %{"error" => %{"message" => message}} = response

@@ -55,15 +55,16 @@ defmodule Modeta.ODataFilterTest do
   describe "logical operators" do
     # Note: Complex logical operations may not be fully supported yet
     # These tests check the current capabilities and fallback behavior
-    
+
     test "simple AND condition with fallback" do
       result = ODataFilter.parse_filter("name eq 'John' and age gt 25")
       # May use regex fallback for complex expressions
       case result do
-        {:ok, sql} -> 
+        {:ok, sql} ->
           assert is_binary(sql)
-          # The regex fallback might produce different format
-        {:error, _} -> 
+
+        # The regex fallback might produce different format
+        {:error, _} ->
           # Complex AND might not be supported yet
           :ok
       end
@@ -83,14 +84,16 @@ defmodule Modeta.ODataFilterTest do
   describe "string functions" do
     # Note: String functions may not be fully implemented yet
     # These tests check for expected behavior or appropriate errors
-    
+
     test "contains function handling" do
       result = ODataFilter.parse_filter("contains(name, 'John')")
+
       case result do
-        {:ok, sql} -> 
+        {:ok, sql} ->
           # If implemented, should contain LIKE pattern
           assert is_binary(sql)
-        {:error, _} -> 
+
+        {:error, _} ->
           # Functions might not be implemented yet
           :ok
       end
@@ -107,15 +110,17 @@ defmodule Modeta.ODataFilterTest do
   describe "complex expressions" do
     # Note: Complex expressions may fall back to regex parsing
     # These tests verify the parser handles them gracefully
-    
+
     test "complex expressions use fallback" do
       filter = "(name eq 'John' or name eq 'Jane') and age gt 18"
       result = ODataFilter.parse_filter(filter)
+
       case result do
-        {:ok, sql} -> 
+        {:ok, sql} ->
           assert is_binary(sql)
-          # May use regex-based parsing for complex cases
-        {:error, _} -> 
+
+        # May use regex-based parsing for complex cases
+        {:error, _} ->
           # Complex parenthetical expressions might not be supported
           :ok
       end
@@ -125,7 +130,7 @@ defmodule Modeta.ODataFilterTest do
       # Test that basic functionality works
       assert {:ok, sql} = ODataFilter.parse_filter("name eq 'John'")
       assert sql =~ "name = 'John'"
-      
+
       assert {:ok, sql} = ODataFilter.parse_filter("age gt 25")
       assert sql =~ "age > 25"
     end
@@ -140,9 +145,11 @@ defmodule Modeta.ODataFilterTest do
     test "filter with no whitespace" do
       # Parser may require whitespace around operators
       result = ODataFilter.parse_filter("name eq'John'")
+
       case result do
         {:ok, sql} -> assert sql =~ "name = 'John'"
-        {:error, _} -> :ok  # Parser may require whitespace
+        # Parser may require whitespace
+        {:error, _} -> :ok
       end
     end
 
@@ -156,14 +163,17 @@ defmodule Modeta.ODataFilterTest do
 
     test "null values" do
       result = ODataFilter.parse_filter("description eq null")
+
       case result do
-        {:ok, sql} -> 
+        {:ok, sql} ->
           # Different implementations may handle null differently
           assert is_binary(sql)
           assert sql != ""
-        {:error, _} -> 
-          :ok  # null might not be implemented yet
-      end  
+
+        {:error, _} ->
+          # null might not be implemented yet
+          :ok
+      end
     end
   end
 
@@ -213,11 +223,14 @@ defmodule Modeta.ODataFilterTest do
       result = ODataFilterParser.parse_filter("name eq 'test'")
       # The parser returns a complex tuple structure
       case result do
-        {:ok, parsed, "", _, _, _} -> 
+        {:ok, parsed, "", _, _, _} ->
           # Should have parsed structure
           assert parsed != nil
-        {:error, _, _, _, _, _} -> 
-          :ok  # Parser might not handle this specific case
+
+        {:error, _, _, _, _, _} ->
+          # Parser might not handle this specific case
+          :ok
+
         other ->
           # Handle unexpected return format
           assert other != nil
@@ -238,11 +251,12 @@ defmodule Modeta.ODataFilterTest do
       result = ODataFilterParserSimple.parse_simple_filter("name eq 'test'")
       # The simple parser returns a parse tree, not SQL
       case result do
-        {:ok, parsed, "", _, _, _} -> 
+        {:ok, parsed, "", _, _, _} ->
           assert parsed != nil
           # Should contain comparison structure
           assert is_list(parsed)
-        {:error, _, _, _, _, _} -> 
+
+        {:error, _, _, _, _, _} ->
           :ok
       end
     end
@@ -250,6 +264,7 @@ defmodule Modeta.ODataFilterTest do
     test "simple parser handles single conditions only" do
       # Simple parser may not support complex AND conditions
       result = ODataFilterParserSimple.parse_simple_filter("name eq 'test'")
+
       case result do
         {:ok, _parsed, "", _, _, _} -> :ok
         {:error, _, _, _, _, _} -> :ok
@@ -261,7 +276,7 @@ defmodule Modeta.ODataFilterTest do
       # Use string values to avoid numeric parsing issues
       test_cases = [
         "field eq 'value'",
-        "field ne 'value'", 
+        "field ne 'value'",
         "field eq 'test'"
       ]
 
@@ -282,7 +297,7 @@ defmodule Modeta.ODataFilterTest do
       # Test basic single-condition filters that should work
       assert {:ok, sql} = ODataFilter.parse_filter("category eq 'Electronics'")
       assert sql =~ "category = 'Electronics'"
-      
+
       assert {:ok, sql} = ODataFilter.parse_filter("price le 1000")
       assert sql =~ "price <= 1000"
     end
@@ -290,7 +305,7 @@ defmodule Modeta.ODataFilterTest do
     test "user filtering examples" do
       assert {:ok, sql} = ODataFilter.parse_filter("name eq 'John'")
       assert sql =~ "name = 'John'"
-      
+
       assert {:ok, sql} = ODataFilter.parse_filter("active eq true")
       assert sql =~ "active = true"
     end
@@ -303,9 +318,11 @@ defmodule Modeta.ODataFilterTest do
     test "complex filters may use fallback" do
       # Complex filters might use regex fallback or fail gracefully
       result = ODataFilter.parse_filter("category eq 'Electronics' and price le 1000")
+
       case result do
         {:ok, sql} -> assert is_binary(sql)
-        {:error, _} -> :ok  # Complex AND might not be supported yet
+        # Complex AND might not be supported yet
+        {:error, _} -> :ok
       end
     end
   end

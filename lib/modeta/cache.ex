@@ -9,9 +9,30 @@ defmodule Modeta.Cache do
   Returns {:ok, result} on success or {:error, reason} on failure.
   """
   def query(sql) when is_binary(sql) do
+    require Logger
+    
+    # Debug log every SQL query
+    Logger.debug("[SQL DEBUG] Executing query: #{sql}")
+    
+    start_time = System.monotonic_time(:millisecond)
+    
     case Adbc.Connection.query(Modeta.Conn, sql) do
-      {:ok, result} -> {:ok, Adbc.Result.materialize(result)}
-      error -> error
+      {:ok, result} -> 
+        end_time = System.monotonic_time(:millisecond)
+        duration = end_time - start_time
+        
+        materialized_result = Adbc.Result.materialize(result)
+        row_count = get_result_row_count(materialized_result)
+        
+        Logger.debug("[SQL DEBUG] Query completed in #{duration}ms, returned #{row_count} rows")
+        {:ok, materialized_result}
+        
+      error -> 
+        end_time = System.monotonic_time(:millisecond)
+        duration = end_time - start_time
+        
+        Logger.error("[SQL DEBUG] Query failed after #{duration}ms: #{inspect(error)}")
+        error
     end
   end
 
@@ -67,6 +88,14 @@ defmodule Modeta.Cache do
             Enum.at(col.data, row_index)
           end)
         end
+    end
+  end
+
+  # Helper function to get row count from ADBC result for debugging
+  defp get_result_row_count(%Adbc.Result{data: columns}) do
+    case columns do
+      [] -> 0
+      [first_col | _] -> length(first_col.data)
     end
   end
 end

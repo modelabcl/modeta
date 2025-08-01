@@ -1,3 +1,13 @@
 collections:
-  - name: customers
-    query: "SELECT * FROM customers"
+  sales_test:
+    - name: customers
+      materialized: true
+      origin: "select * from read_csv('test/fixtures/customers.csv')"
+      primary_key:
+        - id
+    - name: purchases
+      origin: "select * from read_csv('test/fixtures/purchases.csv')"
+      materialized: true
+      references:
+        - col: customer_id
+          ref: customers(id)

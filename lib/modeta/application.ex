@@ -25,8 +25,8 @@ defmodule Modeta.Application do
 
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
-        # Load initial data after supervisor starts
-        Modeta.DataLoader.load_initial_data()
+        # Initialize data structures after supervisor starts
+        Modeta.DataLoader.initialize()
         {:ok, pid}
 
       error ->
