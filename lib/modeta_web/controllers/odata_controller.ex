@@ -14,7 +14,8 @@ defmodule ModetaWeb.ODataController do
     # Get schema information for each collection
     schemas = get_collection_schemas(collections)
 
-    metadata_xml = generate_metadata_xml(schemas)
+    # Generate XML directly using our HTML module
+    metadata_xml = ModetaWeb.ODataHTML.metadata(%{collection_schemas: schemas})
 
     conn
     |> put_resp_content_type("application/xml")
@@ -202,44 +203,4 @@ defmodule ModetaWeb.ODataController do
     end
   end
 
-  # Generate OData metadata XML (CSDL) like the working JS server
-  defp generate_metadata_xml(collection_schemas) do
-    entity_sets =
-      Enum.map(collection_schemas, fn %{name: name} ->
-        "<EntitySet Name=\"#{name}\" EntityType=\"Default.Object\"/>"
-      end)
-      |> Enum.join("")
-
-    # Use the same pattern as the working JS server - generic Object type with OpenType
-    """
-    <?xml version="1.0" encoding="UTF-8"?><edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0"><edmx:DataServices><Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Default"><EntityType Name="Object" OpenType="true"></EntityType><EntityContainer Name="Default">#{entity_sets}</EntityContainer></Schema></edmx:DataServices></edmx:Edmx>
-    """
-  end
-
-  # Map DuckDB types to OData EDM types
-  defp duckdb_type_to_odata_type(duckdb_type) do
-    case String.upcase(duckdb_type) do
-      "BIGINT" -> "Edm.Int64"
-      "INTEGER" -> "Edm.Int32"
-      "SMALLINT" -> "Edm.Int16"
-      "TINYINT" -> "Edm.Byte"
-      "DOUBLE" -> "Edm.Double"
-      "REAL" -> "Edm.Single"
-      "FLOAT" -> "Edm.Single"
-      "DECIMAL" <> _ -> "Edm.Decimal"
-      "NUMERIC" <> _ -> "Edm.Decimal"
-      "VARCHAR" <> _ -> "Edm.String"
-      "CHAR" <> _ -> "Edm.String"
-      "TEXT" -> "Edm.String"
-      "BOOLEAN" -> "Edm.Boolean"
-      "DATE" -> "Edm.Date"
-      "TIME" -> "Edm.TimeOfDay"
-      "TIMESTAMP" -> "Edm.DateTimeOffset"
-      "TIMESTAMPTZ" -> "Edm.DateTimeOffset"
-      "UUID" -> "Edm.Guid"
-      "BLOB" -> "Edm.Binary"
-      # Default fallback
-      _ -> "Edm.String"
-    end
-  end
 end

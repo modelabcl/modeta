@@ -1,12 +1,12 @@
-defmodule ModetaWeb do
+defmodule PhxExampleWeb do
   @moduledoc """
   The entrypoint for defining your web interface, such
   as controllers, components, channels, and so on.
 
   This can be used in your application as:
 
-   use ModetaWeb, :controller
-   use ModetaWeb, :html
+      use PhxExampleWeb, :controller
+      use PhxExampleWeb, :html
 
   The definitions below will be executed for every controller,
   component, etc, so keep them short and clean, focused
@@ -26,6 +26,7 @@ defmodule ModetaWeb do
       # Import common connection and controller functions to use in pipelines
       import Plug.Conn
       import Phoenix.Controller
+      import Phoenix.LiveView.Router
     end
   end
 
@@ -37,13 +38,29 @@ defmodule ModetaWeb do
 
   def controller do
     quote do
-      use Phoenix.Controller, formats: [:html, :json, :xml]
+      use Phoenix.Controller, formats: [:html, :json]
 
-      use Gettext, backend: ModetaWeb.Gettext
+      use Gettext, backend: PhxExampleWeb.Gettext
 
       import Plug.Conn
 
       unquote(verified_routes())
+    end
+  end
+
+  def live_view do
+    quote do
+      use Phoenix.LiveView
+
+      unquote(html_helpers())
+    end
+  end
+
+  def live_component do
+    quote do
+      use Phoenix.LiveComponent
+
+      unquote(html_helpers())
     end
   end
 
@@ -63,24 +80,28 @@ defmodule ModetaWeb do
   defp html_helpers do
     quote do
       # Translation
-      use Gettext, backend: ModetaWeb.Gettext
+      use Gettext, backend: PhxExampleWeb.Gettext
 
       # HTML escaping functionality
       import Phoenix.HTML
+      # Core UI components
+      import PhxExampleWeb.CoreComponents
+
+      # Common modules used in templates
+      alias Phoenix.LiveView.JS
+      alias PhxExampleWeb.Layouts
 
       # Routes generation with the ~p sigil
       unquote(verified_routes())
     end
   end
 
-
-
   def verified_routes do
     quote do
       use Phoenix.VerifiedRoutes,
-        endpoint: ModetaWeb.Endpoint,
-        router: ModetaWeb.Router,
-        statics: ModetaWeb.static_paths()
+        endpoint: PhxExampleWeb.Endpoint,
+        router: PhxExampleWeb.Router,
+        statics: PhxExampleWeb.static_paths()
     end
   end
 
