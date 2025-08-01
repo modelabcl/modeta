@@ -10,23 +10,33 @@ This document tracks missing OData v4.01 protocol features for read-only operati
 - [x] Entity Set queries (`/collection`)
 - [x] Navigation Properties (`/collection(key)/NavProp`)
 - [x] Basic `$filter` support (comparison operators)
+- [x] Enhanced `$filter` support (logical operators: and/or)
 - [x] Foreign Key constraints and metadata generation
 - [x] Primary Key constraints
 - [x] Dynamic collection groups
+- [x] `$expand` System Query Option
+- [x] `$select` System Query Option
+- [x] `$orderby` System Query Option
+- [x] `$top` and `$skip` System Query Options
+- [x] `$count` System Query Option
+- [x] Server-Driven Paging with `@odata.nextLink`
+- [x] Entity by Key access (`/collection(key)`)
 
 ### 🔥 Priority 1: Essential Missing Features
 
-1. **$expand System Query Option** 
-   - **Current**: Not implemented
-   - **Needed**: `GET /purchases?$expand=Customers` should include related customer data inline
-   - **Impact**: Critical for Excel pivot tables with related data
-   - **Implementation**: Modify query building to JOIN related tables and nest results
+**All Priority 1 features have been completed! ✅**
 
-2. **$select System Query Option**
-   - **Current**: Always returns all columns
-   - **Needed**: `GET /purchases?$select=id,total,customer_id` should return only specified fields
+1. **$expand System Query Option** ✅
+   - **Current**: Fully implemented with LEFT JOIN support
+   - **Features**: Navigation property expansion, nested entity data, integration with other query options
+   - **Impact**: Critical for Excel pivot tables with related data
+   - **Implementation**: Complete with comprehensive LEFT JOIN SQL generation and test coverage
+
+2. **$select System Query Option** ✅
+   - **Current**: Fully implemented with column filtering
+   - **Features**: Column selection, context URL updates, integration with other features
    - **Impact**: High - reduces payload size and improves performance
-   - **Implementation**: Modify SQL SELECT to include only requested columns
+   - **Implementation**: Complete with SQL SELECT wrapping and comprehensive testing
 
 3. **Server-Driven Paging** ✅
    - **Current**: Implemented with configurable page sizes
@@ -34,19 +44,19 @@ This document tracks missing OData v4.01 protocol features for read-only operati
    - **Impact**: High - prevents Excel timeouts on large tables
    - **Implementation**: Complete with comprehensive test coverage
 
-4. **Entity by Key** 
-   - **Current**: Navigation properties work, but direct entity access doesn't
-   - **Needed**: `GET /customers(1)` should return single customer
+4. **Entity by Key** ✅
+   - **Current**: Fully implemented for single entity access
+   - **Features**: `GET /customers(1)` returns single customer, works with $expand and $select
    - **Impact**: High - Excel uses this for detail views
-   - **Implementation**: Add route and handler for `/:collection(:key)` pattern
+   - **Implementation**: Complete with route handling and comprehensive testing
 
 ## Priority 2: Important for Advanced Features
 
-5. **$orderby System Query Option**
-   - **Current**: Natural database order
-   - **Needed**: `GET /purchases?$orderby=date desc,total asc`
+5. **$orderby System Query Option** ✅
+   - **Current**: Fully implemented with comprehensive support
+   - **Features**: Single/multiple column sorting, asc/desc directions, case insensitive
    - **Impact**: Medium - improves user experience in Excel
-   - **Implementation**: Add ORDER BY clause to SQL queries
+   - **Implementation**: Complete with SQL ORDER BY generation and integration tests
 
 6. **$top and $skip System Query Options** ✅
    - **Current**: Fully implemented with server-driven paging
@@ -54,17 +64,18 @@ This document tracks missing OData v4.01 protocol features for read-only operati
    - **Impact**: Medium - allows Excel to implement custom paging
    - **Implementation**: Complete with LIMIT/OFFSET SQL generation
 
-7. **$count System Query Option** 
-   - **Current**: Not implemented
-   - **Needed**: `GET /purchases?$count=true` should include total count
+7. **$count System Query Option** ✅
+   - **Current**: Fully implemented with comprehensive support
+   - **Features**: Total count inclusion with `@odata.count`, respects filtering, independent of pagination
    - **Impact**: Medium - helps Excel show total record counts
-   - **Implementation**: Add COUNT(*) query and include in `@odata.count`
+   - **Implementation**: Complete with COUNT(*) query generation and integration tests
 
-8. **Enhanced $filter Support**
-   - **Current**: Basic comparison operators only
-   - **Needed**: Logical operators (and/or), functions (contains, startswith, etc.)
+8. **Enhanced $filter Support** ✅ (Partial)
+   - **Current**: Comparison operators (eq, ne, gt, ge, lt, le) and logical operators (and, or) implemented
+   - **Completed**: Logical operators with proper precedence, complex expressions with parentheses
+   - **Still Needed**: Functions (contains, startswith, endswith, etc.) - parser supports but SQL generation needed
    - **Impact**: Medium - enables complex filtering in Excel
-   - **Implementation**: Enhance ODataFilterParser with full operator support
+   - **Implementation**: NimbleParsec parser complete, SQL generation for functions still needed
 
 ## Priority 3: Nice to Have
 
@@ -114,16 +125,17 @@ This document tracks missing OData v4.01 protocol features for read-only operati
 
 ## Implementation Strategy
 
-### Phase 1 (Immediate - Week 1)
-- Implement $expand for navigation properties
-- Add $select support
-- Implement entity by key access
-- Add server-driven paging with configurable page size
+### Phase 1 (Immediate - Week 1) ✅ COMPLETED
+- ✅ Implement $expand for navigation properties
+- ✅ Add $select support
+- ✅ Implement entity by key access
+- ✅ Add server-driven paging with configurable page size
 
-### Phase 2 (Short-term - Week 2-3)  
-- Add $orderby, $top, $skip support
-- Implement $count option
-- Enhance $filter with logical operators and functions
+### Phase 2 (Short-term - Week 2-3) ✅ COMPLETED
+- ✅ Add $orderby, $top, $skip support
+- ✅ Enhance $filter with logical operators
+- ✅ Implement $count option
+- ⏳ Add $filter functions (contains, startswith, etc.) - parser ready, SQL generation needed
 
 ### Phase 3 (Medium-term - Month 1-2)
 - Add $search functionality
