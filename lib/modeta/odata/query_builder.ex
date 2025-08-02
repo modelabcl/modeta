@@ -1,10 +1,10 @@
 defmodule Modeta.OData.QueryBuilder do
   @moduledoc """
   Builds SQL queries from OData system query options.
-  
+
   This module handles the construction of SQL queries based on OData v4 system
   query options like $filter, $select, $expand, $orderby, and pagination.
-  
+
   Extracted from ModetaWeb.ODataController to separate domain logic from web logic.
   """
 
@@ -12,25 +12,25 @@ defmodule Modeta.OData.QueryBuilder do
 
   @doc """
   Builds a complete SQL query with all OData options applied.
-  
+
   Takes a base query and applies the following transformations in order:
   1. $expand (LEFT JOINs for navigation properties)
   2. $select (column filtering)
   3. $filter (WHERE clauses)
   4. $orderby (ORDER BY clauses)
   5. Pagination (LIMIT/OFFSET)
-  
+
   ## Parameters
   - base_query: The initial SQL query string
   - group_name: Collection group name for schema resolution
   - collection_name: Name of the collection being queried
   - filter_param: $filter parameter value
-  - expand_param: $expand parameter value  
+  - expand_param: $expand parameter value
   - select_param: $select parameter value
   - orderby_param: $orderby parameter value
   - skip_param: $skip parameter value
   - top_param: $top parameter value
-  
+
   ## Returns
   - String containing the final SQL query with all options applied
   """
@@ -75,6 +75,7 @@ defmodule Modeta.OData.QueryBuilder do
 
   # Apply $select by wrapping query with column filtering
   defp apply_select_filtering(base_query, nil), do: base_query
+
   defp apply_select_filtering(base_query, select_param) do
     apply_select_to_query(base_query, select_param)
   end
@@ -86,6 +87,7 @@ defmodule Modeta.OData.QueryBuilder do
 
   # Apply $orderby by adding ORDER BY clause
   defp apply_ordering(base_query, nil), do: base_query
+
   defp apply_ordering(base_query, orderby_param) do
     apply_orderby_to_query(base_query, orderby_param)
   end

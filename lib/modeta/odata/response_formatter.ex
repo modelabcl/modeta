@@ -1,14 +1,14 @@
 defmodule Modeta.OData.ResponseFormatter do
   @moduledoc """
   Formats OData v4 JSON responses according to the OData specification.
-  
+
   This module handles the construction of OData-compliant JSON responses including:
   - Row data formatting with proper object structure
   - Pagination responses with @odata.nextLink
   - Context URL generation for metadata
   - Content-type negotiation and headers
   - Navigation property expansion formatting
-  
+
   Extracted from ModetaWeb.ODataController to separate response formatting 
   concerns from web layer logic.
   """
@@ -17,13 +17,13 @@ defmodule Modeta.OData.ResponseFormatter do
 
   @doc """
   Formats database rows as OData entity objects.
-  
+
   Converts list of row data (lists) into proper JSON objects using column names.
-  
+
   ## Parameters
   - rows: List of lists containing row data
   - column_names: List of column names matching row data
-  
+
   ## Returns
   - List of maps representing OData entities
   """
@@ -37,11 +37,11 @@ defmodule Modeta.OData.ResponseFormatter do
 
   @doc """
   Formats a single database row as an OData entity object.
-  
+
   ## Parameters  
   - row: List containing single row data
   - column_names: List of column names matching row data
-  
+
   ## Returns
   - Map representing single OData entity
   """
@@ -53,17 +53,17 @@ defmodule Modeta.OData.ResponseFormatter do
 
   @doc """
   Formats rows with expanded navigation properties.
-  
+
   Processes query results that include JOINed navigation property data
   and formats them into proper OData expansion structure.
-  
+
   ## Parameters
   - rows: List of lists containing joined row data
   - column_names: List of column names including expanded columns
   - group_name: Collection group name for configuration lookup
   - collection_name: Primary collection name
   - expand_param: $expand parameter value specifying which properties to expand
-  
+
   ## Returns
   - List of maps with expanded navigation properties embedded
   """
@@ -99,10 +99,10 @@ defmodule Modeta.OData.ResponseFormatter do
 
   @doc """
   Builds paginated OData response with @odata.nextLink if needed.
-  
+
   Creates the standard OData collection response format with proper pagination
   links when more results are available.
-  
+
   ## Parameters
   - context_url: The @odata.context URL for metadata reference
   - rows: Formatted entity data
@@ -112,7 +112,7 @@ defmodule Modeta.OData.ResponseFormatter do
   - params: Query parameters for next link construction
   - skip_param: Current $skip value
   - top_param: Current $top value
-  
+
   ## Returns
   - Map containing @odata.context, value, and optionally @odata.nextLink
   """
@@ -190,7 +190,7 @@ defmodule Modeta.OData.ResponseFormatter do
 
   @doc """
   Builds the URL for the next page in pagination.
-  
+
   ## Parameters
   - conn: Phoenix connection for base URL construction
   - group_name: Collection group name
@@ -198,7 +198,7 @@ defmodule Modeta.OData.ResponseFormatter do
   - params: Current query parameters
   - next_skip: Skip value for next page
   - current_top: Current page size
-  
+
   ## Returns
   - String containing the full next page URL
   """
@@ -219,15 +219,15 @@ defmodule Modeta.OData.ResponseFormatter do
 
   @doc """
   Builds OData context URL with optional $select parameter support.
-  
+
   Creates the @odata.context URL that references the metadata document
   and specifies the entity set being returned.
-  
+
   ## Parameters
   - base_url: Base URL for the service
   - entity_set: Name of the entity set or collection
   - select_param: Optional $select parameter value
-  
+
   ## Returns
   - String containing the context URL
   """
@@ -253,13 +253,13 @@ defmodule Modeta.OData.ResponseFormatter do
 
   @doc """
   Determines appropriate OData content type based on Accept header.
-  
+
   Handles content negotiation for OData metadata parameter (minimal, full, none)
   and returns properly formatted content-type header value.
-  
+
   ## Parameters
   - accept_header: Accept header value from HTTP request
-  
+
   ## Returns
   - String containing OData-compliant content-type header value
   """

@@ -11,7 +11,9 @@
       "Bash(mix compile)",
       "Bash(curl:*)",
       "Bash(mix credo:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(grep:*)",
+      "Bash(sed:*)"
     ],
     "deny": []
   }

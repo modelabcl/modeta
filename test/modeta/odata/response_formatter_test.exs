@@ -10,6 +10,7 @@ defmodule Modeta.OData.ResponseFormatterTest do
         ["John", "john@example.com", 25],
         ["Jane", "jane@example.com", 30]
       ]
+
       column_names = ["name", "email", "age"]
 
       result = ResponseFormatter.format_rows_as_objects(rows, column_names)
@@ -46,6 +47,7 @@ defmodule Modeta.OData.ResponseFormatterTest do
         ["Product", 999.99, true, nil],
         ["Service", 0.0, false, "note"]
       ]
+
       column_names = ["name", "price", "active", "description"]
 
       result = ResponseFormatter.format_rows_as_objects(rows, column_names)
@@ -151,7 +153,9 @@ defmodule Modeta.OData.ResponseFormatterTest do
     test "returns minimal metadata by default" do
       result = ResponseFormatter.get_odata_content_type(nil)
 
-      expected = "application/json;odata.metadata=minimal;odata.streaming=true;IEEE754Compatible=false"
+      expected =
+        "application/json;odata.metadata=minimal;odata.streaming=true;IEEE754Compatible=false"
+
       assert result == expected
     end
 
@@ -160,7 +164,9 @@ defmodule Modeta.OData.ResponseFormatterTest do
 
       result = ResponseFormatter.get_odata_content_type(accept_header)
 
-      expected = "application/json;odata.metadata=full;odata.streaming=true;IEEE754Compatible=false"
+      expected =
+        "application/json;odata.metadata=full;odata.streaming=true;IEEE754Compatible=false"
+
       assert result == expected
     end
 
@@ -169,7 +175,9 @@ defmodule Modeta.OData.ResponseFormatterTest do
 
       result = ResponseFormatter.get_odata_content_type(accept_header)
 
-      expected = "application/json;odata.metadata=none;odata.streaming=true;IEEE754Compatible=false"
+      expected =
+        "application/json;odata.metadata=none;odata.streaming=true;IEEE754Compatible=false"
+
       assert result == expected
     end
 
@@ -178,7 +186,9 @@ defmodule Modeta.OData.ResponseFormatterTest do
 
       result = ResponseFormatter.get_odata_content_type(accept_header)
 
-      expected = "application/json;odata.metadata=minimal;odata.streaming=true;IEEE754Compatible=false"
+      expected =
+        "application/json;odata.metadata=minimal;odata.streaming=true;IEEE754Compatible=false"
+
       assert result == expected
     end
 
@@ -187,7 +197,9 @@ defmodule Modeta.OData.ResponseFormatterTest do
 
       result = ResponseFormatter.get_odata_content_type(accept_header)
 
-      expected = "application/json;odata.metadata=full;odata.streaming=true;IEEE754Compatible=false"
+      expected =
+        "application/json;odata.metadata=full;odata.streaming=true;IEEE754Compatible=false"
+
       assert result == expected
     end
   end
@@ -201,11 +213,19 @@ defmodule Modeta.OData.ResponseFormatterTest do
       next_skip = 50
       current_top = 25
 
-      result = ResponseFormatter.build_next_link_url(
-        conn, group_name, collection_name, params, next_skip, current_top
-      )
+      result =
+        ResponseFormatter.build_next_link_url(
+          conn,
+          group_name,
+          collection_name,
+          params,
+          next_skip,
+          current_top
+        )
 
-      expected = "https://api.example.com:443/sales/orders?$filter=total%20gt%20100&$orderby=date%20desc&$skip=50&$top=25"
+      expected =
+        "https://api.example.com:443/sales/orders?$filter=total%20gt%20100&$orderby=date%20desc&$skip=50&$top=25"
+
       assert result == expected
     end
 
@@ -217,9 +237,15 @@ defmodule Modeta.OData.ResponseFormatterTest do
       next_skip = 10
       current_top = 5
 
-      result = ResponseFormatter.build_next_link_url(
-        conn, group_name, collection_name, params, next_skip, current_top
-      )
+      result =
+        ResponseFormatter.build_next_link_url(
+          conn,
+          group_name,
+          collection_name,
+          params,
+          next_skip,
+          current_top
+        )
 
       # URI.encode should handle special characters
       assert String.contains?(result, "http://localhost:4000/test/items")
@@ -233,18 +259,26 @@ defmodule Modeta.OData.ResponseFormatterTest do
       conn = %{scheme: "http", host: "localhost", port: 8080}
       group_name = "data"
       collection_name = "products"
+
       params = %{
         "$filter" => "price gt 50",
         "$orderby" => "name",
         "$select" => "id,name,price",
         "$expand" => "category"
       }
+
       next_skip = 100
       current_top = 20
 
-      result = ResponseFormatter.build_next_link_url(
-        conn, group_name, collection_name, params, next_skip, current_top
-      )
+      result =
+        ResponseFormatter.build_next_link_url(
+          conn,
+          group_name,
+          collection_name,
+          params,
+          next_skip,
+          current_top
+        )
 
       assert String.contains?(result, "$filter=")
       assert String.contains?(result, "$orderby=")
@@ -259,7 +293,7 @@ defmodule Modeta.OData.ResponseFormatterTest do
     setup do
       conn = %{scheme: "https", host: "api.example.com", port: 443}
       context_url = "https://api.example.com/test/$metadata#customers"
-      
+
       %{conn: conn, context_url: context_url}
     end
 
@@ -268,10 +302,18 @@ defmodule Modeta.OData.ResponseFormatterTest do
         %{"id" => 1, "name" => "John"},
         %{"id" => 2, "name" => "Jane"}
       ]
-      
-      result = ResponseFormatter.build_paginated_response(
-        context_url, rows, conn, "test", "customers", %{}, nil, nil
-      )
+
+      result =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          rows,
+          conn,
+          "test",
+          "customers",
+          %{},
+          nil,
+          nil
+        )
 
       expected = %{
         "@odata.context" => context_url,
@@ -285,15 +327,23 @@ defmodule Modeta.OData.ResponseFormatterTest do
       # Create exactly 5 rows (matching the top param)
       rows = Enum.map(1..5, fn i -> %{"id" => i, "name" => "User #{i}"} end)
       params = %{"$filter" => "active eq true"}
-      
-      result = ResponseFormatter.build_paginated_response(
-        context_url, rows, conn, "test", "customers", params, "0", "5"
-      )
+
+      result =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          rows,
+          conn,
+          "test",
+          "customers",
+          params,
+          "0",
+          "5"
+        )
 
       assert result["@odata.context"] == context_url
       assert result["value"] == rows
       assert Map.has_key?(result, "@odata.nextLink")
-      
+
       next_link = result["@odata.nextLink"]
       assert String.contains?(next_link, "$skip=5")
       assert String.contains?(next_link, "$top=5")
@@ -302,10 +352,18 @@ defmodule Modeta.OData.ResponseFormatterTest do
     test "no next link when page is not full", %{conn: conn, context_url: context_url} do
       # Create 3 rows (less than the page size)
       rows = Enum.map(1..3, fn i -> %{"id" => i, "name" => "User #{i}"} end)
-      
-      result = ResponseFormatter.build_paginated_response(
-        context_url, rows, conn, "test", "customers", %{}, nil, "5"
-      )
+
+      result =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          rows,
+          conn,
+          "test",
+          "customers",
+          %{},
+          nil,
+          "5"
+        )
 
       assert result["@odata.context"] == context_url
       assert result["value"] == rows
@@ -314,10 +372,18 @@ defmodule Modeta.OData.ResponseFormatterTest do
 
     test "handles custom skip and top parameters", %{conn: conn, context_url: context_url} do
       rows = Enum.map(1..10, fn i -> %{"id" => i, "name" => "User #{i}"} end)
-      
-      result = ResponseFormatter.build_paginated_response(
-        context_url, rows, conn, "test", "customers", %{}, "20", "10"
-      )
+
+      result =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          rows,
+          conn,
+          "test",
+          "customers",
+          %{},
+          "20",
+          "10"
+        )
 
       next_link = result["@odata.nextLink"]
       assert String.contains?(next_link, "$skip=30")
@@ -327,10 +393,18 @@ defmodule Modeta.OData.ResponseFormatterTest do
     test "enforces maximum page size limit", %{conn: conn, context_url: context_url} do
       # Request 10000 records (above max of 5000)
       rows = Enum.map(1..5000, fn i -> %{"id" => i, "name" => "User #{i}"} end)
-      
-      result = ResponseFormatter.build_paginated_response(
-        context_url, rows, conn, "test", "customers", %{}, nil, "10000"
-      )
+
+      result =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          rows,
+          conn,
+          "test",
+          "customers",
+          %{},
+          nil,
+          "10000"
+        )
 
       next_link = result["@odata.nextLink"]
       # Should be limited to max page size of 5000
@@ -339,14 +413,30 @@ defmodule Modeta.OData.ResponseFormatterTest do
 
     test "handles invalid skip values", %{conn: conn, context_url: context_url} do
       rows = [%{"id" => 1, "name" => "Test"}]
-      
-      result1 = ResponseFormatter.build_paginated_response(
-        context_url, rows, conn, "test", "customers", %{}, "invalid", nil
-      )
-      
-      result2 = ResponseFormatter.build_paginated_response(
-        context_url, rows, conn, "test", "customers", %{}, "-10", nil
-      )
+
+      result1 =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          rows,
+          conn,
+          "test",
+          "customers",
+          %{},
+          "invalid",
+          nil
+        )
+
+      result2 =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          rows,
+          conn,
+          "test",
+          "customers",
+          %{},
+          "-10",
+          nil
+        )
 
       # Both should treat invalid skip as 0
       refute Map.has_key?(result1, "@odata.nextLink")
@@ -356,29 +446,53 @@ defmodule Modeta.OData.ResponseFormatterTest do
     test "handles invalid top values", %{conn: conn, context_url: context_url} do
       # Create exactly 1000 rows (default page size)
       rows = Enum.map(1..1000, fn i -> %{"id" => i, "name" => "User #{i}"} end)
-      
-      result1 = ResponseFormatter.build_paginated_response(
-        context_url, rows, conn, "test", "customers", %{}, nil, "invalid"
-      )
-      
-      result2 = ResponseFormatter.build_paginated_response(
-        context_url, rows, conn, "test", "customers", %{}, nil, "0"
-      )
+
+      result1 =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          rows,
+          conn,
+          "test",
+          "customers",
+          %{},
+          nil,
+          "invalid"
+        )
+
+      result2 =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          rows,
+          conn,
+          "test",
+          "customers",
+          %{},
+          nil,
+          "0"
+        )
 
       # Both should use default page size (1000) and include next link
       assert Map.has_key?(result1, "@odata.nextLink")
       assert Map.has_key?(result2, "@odata.nextLink")
-      
+
       assert String.contains?(result1["@odata.nextLink"], "$top=1000")
       assert String.contains?(result2["@odata.nextLink"], "$top=1000")
     end
 
     test "handles integer parameters", %{conn: conn, context_url: context_url} do
       rows = Enum.map(1..15, fn i -> %{"id" => i, "name" => "User #{i}"} end)
-      
-      result = ResponseFormatter.build_paginated_response(
-        context_url, rows, conn, "test", "customers", %{}, 50, 15
-      )
+
+      result =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          rows,
+          conn,
+          "test",
+          "customers",
+          %{},
+          50,
+          15
+        )
 
       next_link = result["@odata.nextLink"]
       assert String.contains?(next_link, "$skip=65")
@@ -390,16 +504,21 @@ defmodule Modeta.OData.ResponseFormatterTest do
     test "returns basic formatting when collection not found" do
       rows = [["John", "john@example.com"], ["Jane", "jane@example.com"]]
       column_names = ["name", "email"]
-      
-      result = ResponseFormatter.format_rows_with_expansion(
-        rows, column_names, "nonexistent", "users", "Profile"
-      )
+
+      result =
+        ResponseFormatter.format_rows_with_expansion(
+          rows,
+          column_names,
+          "nonexistent",
+          "users",
+          "Profile"
+        )
 
       expected = [
         %{"name" => "John", "email" => "john@example.com"},
         %{"name" => "Jane", "email" => "jane@example.com"}
       ]
-      
+
       assert result == expected
     end
 

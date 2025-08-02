@@ -2,7 +2,7 @@ defmodule ModetaWeb.ODataController do
   use ModetaWeb, :controller
 
   alias Modeta.{Cache, Collections}
-  alias Modeta.OData.{QueryBuilder, ResponseFormatter}
+  alias Modeta.OData.{QueryBuilder, ResponseFormatter, NavigationResolver, PaginationHandler}
 
   @doc """
   Returns OData service metadata (XML/CSDL format).
@@ -74,12 +74,18 @@ defmodule ModetaWeb.ODataController do
         "navigation_property" => nav_prop
       }) do
     # Parse collection name and key from format "purchases(1)"
-    case parse_collection_and_key(collection_with_key) do
+    case NavigationResolver.parse_collection_and_key(collection_with_key) do
       {:ok, collection_name, key} ->
         # Get the collection configuration to find references
         case Collections.get_collection(group_name, collection_name) do
           {:ok, collection_config} ->
-            handle_navigation_request(conn, group_name, collection_config, key, nav_prop)
+            NavigationResolver.handle_navigation_request(
+              conn,
+              group_name,
+              collection_config,
+              key,
+              nav_prop
+            )
 
           {:error, :not_found} ->
             conn
@@ -104,7 +110,7 @@ defmodule ModetaWeb.ODataController do
         %{"collection_group" => group_name, "collection" => collection_param} = params
       ) do
     # Check if this is an entity-by-key request (e.g., "customers(1)")
-    case parse_collection_and_key(collection_param) do
+    case NavigationResolver.parse_collection_and_key(collection_param) do
       {:ok, collection_name, key} ->
         # Handle entity by key request
         handle_entity_by_key_request(conn, group_name, collection_name, key, params)
@@ -149,8 +155,8 @@ defmodule ModetaWeb.ODataController do
 
             # Get total count if requested
             total_count =
-              if should_include_count?(count_param) do
-                get_total_count(base_query, filter_param)
+              if PaginationHandler.should_include_count?(count_param) do
+                PaginationHandler.get_total_count(base_query, filter_param)
               else
                 nil
               end
@@ -173,7 +179,8 @@ defmodule ModetaWeb.ODataController do
               end
 
             # Build context URL with $select parameters if applicable
-            context_url = ResponseFormatter.build_context_url(base_url, collection_name, select_param)
+            context_url =
+              ResponseFormatter.build_context_url(base_url, collection_name, select_param)
 
             # Check if we need pagination and build @odata.nextLink
             response =
@@ -269,7 +276,11 @@ defmodule ModetaWeb.ODataController do
 
                 # Build context URL with $select parameters if applicable
                 context_url =
-                  ResponseFormatter.build_context_url(base_url, "#{collection_name}/$entity", select_param)
+                  ResponseFormatter.build_context_url(
+                    base_url,
+                    "#{collection_name}/$entity",
+                    select_param
+                  )
 
                 # OData single entity response format
                 response =
@@ -316,7 +327,6 @@ defmodule ModetaWeb.ODataController do
   defp get_column_names(%Adbc.Result{data: columns}) do
     Enum.map(columns, & &1.name)
   end
-
 
   # Get schema information for collections in a specific group
   defp get_collection_schemas_for_group(group_name, collection_names) do
@@ -382,188 +392,4 @@ defmodule ModetaWeb.ODataController do
       []
     end
   end
-
-  # Parse collection name and key from format "purchases(1)"
-  defp parse_collection_and_key(collection_with_key) do
-    case Regex.run(~r/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]+)\)$/, collection_with_key) do
-      [_, collection_name, key] -> {:ok, collection_name, key}
-      nil -> {:error, "Expected format: collection(key)"}
-    end
-  end
-
-  # Handle navigation property request by finding related entities
-  defp handle_navigation_request(conn, group_name, collection_config, key, nav_prop) do
-    # Find the reference that matches the navigation property
-    case find_reference_for_navigation(collection_config.references, nav_prop) do
-      {:ok, reference} ->
-        execute_navigation_query(conn, group_name, collection_config, key, reference, nav_prop)
-
-      {:error, :no_reference} ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: %{message: "Navigation property '#{nav_prop}' not found"}})
-    end
-  end
-
-  # Find the reference configuration for a navigation property
-  defp find_reference_for_navigation(references, nav_prop) do
-    # Navigation property name should match the referenced table name
-    # For reference like "col: customer_id, ref: customers(id)", nav_prop would be "Customers"
-    target_ref =
-      Enum.find(references, fn %{"ref" => ref_spec} ->
-        case parse_reference_spec(ref_spec) do
-          {:ok, {ref_table, _}} ->
-            # Strip schema prefix and compare with navigation property (case insensitive)
-            table_name = ref_table |> String.split(".") |> List.last()
-            String.downcase(String.capitalize(table_name)) == String.downcase(nav_prop)
-
-          _ ->
-            false
-        end
-      end)
-
-    case target_ref do
-      nil -> {:error, :no_reference}
-      ref -> {:ok, ref}
-    end
-  end
-
-  # Execute the SQL query to get related entities
-  defp execute_navigation_query(conn, group_name, collection_config, key, reference, nav_prop) do
-    %{"col" => foreign_key_column, "ref" => ref_spec} = reference
-
-    case parse_reference_spec(ref_spec) do
-      {:ok, {ref_table, ref_column}} ->
-        # Build the JOIN query to get related entities
-        qualified_ref_table =
-          if String.contains?(ref_table, ".") do
-            ref_table
-          else
-            "#{group_name}.#{ref_table}"
-          end
-
-        # Query: SELECT target.* FROM target_table target
-        #        JOIN source_table source ON target.ref_column = source.foreign_key_column
-        #        WHERE source.primary_key = key
-        query = """
-        SELECT target.*
-        FROM #{qualified_ref_table} target
-        JOIN #{collection_config.table_name} source ON target.#{ref_column} = source.#{foreign_key_column}
-        WHERE source.id = #{key}
-        """
-
-        case Cache.query(query) do
-          {:ok, result} ->
-            rows = Cache.to_rows(result)
-            column_names = get_column_names(result)
-
-            # Build response - navigation properties return single entity or collection
-            # For now, assume single entity (most common case)
-            case rows do
-              [single_row] ->
-                entity = ResponseFormatter.format_single_row_as_object(single_row, column_names)
-                base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}/#{group_name}"
-
-                response =
-                  %{
-                    "@odata.context" =>
-                      "#{base_url}/$metadata##{String.downcase(nav_prop)}/$entity"
-                  }
-                  |> Map.merge(entity)
-
-                accept_header = get_req_header(conn, "accept") |> List.first()
-                content_type = ResponseFormatter.get_odata_content_type(accept_header)
-
-                conn
-                |> put_resp_header("odata-version", "4.0")
-                |> put_resp_content_type(content_type)
-                |> json(response)
-
-              [] ->
-                conn
-                |> put_status(:not_found)
-                |> json(%{error: %{message: "Related entity not found"}})
-
-              multiple_rows ->
-                # Multiple related entities - return as collection
-                entities = ResponseFormatter.format_rows_as_objects(multiple_rows, column_names)
-                base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}/#{group_name}"
-
-                response = %{
-                  "@odata.context" => "#{base_url}/$metadata##{String.downcase(nav_prop)}",
-                  "value" => entities
-                }
-
-                accept_header = get_req_header(conn, "accept") |> List.first()
-                content_type = ResponseFormatter.get_odata_content_type(accept_header)
-
-                conn
-                |> put_resp_header("odata-version", "4.0")
-                |> put_resp_content_type(content_type)
-                |> json(response)
-            end
-
-          {:error, reason} ->
-            conn
-            |> put_status(:internal_server_error)
-            |> json(%{error: %{message: "Navigation query failed: #{inspect(reason)}"}})
-        end
-
-      {:error, reason} ->
-        conn
-        |> put_status(:internal_server_error)
-        |> json(%{error: %{message: "Invalid reference specification: #{reason}"}})
-    end
-  end
-
-  # Parse reference specification like "customers(id)" or "sales_test.customers(id)"
-  defp parse_reference_spec(ref_spec) do
-    case Regex.run(~r/^([a-zA-Z_][a-zA-Z0-9_.]*)\(([a-zA-Z_][a-zA-Z0-9_]*)\)$/, ref_spec) do
-      [_, table, column] -> {:ok, {table, column}}
-      nil -> {:error, "Invalid format. Expected 'table(column)' or 'schema.table(column)'"}
-    end
-  end
-
-
-
-  # Check if $count parameter requests total count inclusion
-  defp should_include_count?(count_param) do
-    case count_param do
-      "true" -> true
-      true -> true
-      _ -> false
-    end
-  end
-
-  # Get total count of records matching filter criteria
-  defp get_total_count(base_query, filter_param) do
-    # Build count query with filter applied but without pagination, select, orderby, or expand
-    count_query =
-      case filter_param do
-        nil ->
-          "SELECT COUNT(*) as total_count FROM (#{base_query}) AS count_data"
-
-        filter ->
-          filtered_query = Modeta.ODataFilter.apply_filter_to_query(base_query, filter)
-          "SELECT COUNT(*) as total_count FROM (#{filtered_query}) AS count_data"
-      end
-
-    case Cache.query(count_query) do
-      {:ok, result} ->
-        # Extract count from first row, first column
-        rows = Cache.to_rows(result)
-
-        case rows do
-          [[count] | _] when is_integer(count) -> count
-          _ -> 0
-        end
-
-      {:error, _reason} ->
-        # If count query fails, return 0 rather than crashing
-        0
-    end
-  end
-
-
-
 end
