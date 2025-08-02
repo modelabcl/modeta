@@ -11,6 +11,3 @@ collections:
       references:
         - col: customer_id
           ref: customers(id)
-          nullable: false        # Required relationship → INNER JOIN
-          multiplicity: "1"      # Exactly one customer per purchase  
-          join_type: inner       # Explicit JOIN type (inner/left)

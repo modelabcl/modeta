@@ -159,12 +159,13 @@ defmodule Modeta.OData.NavigationResolver do
           end
 
         # Query: SELECT target.* FROM target_table target
-        #        JOIN source_table source ON target.ref_column = source.foreign_key_column
+        #        INNER JOIN source_table source ON target.ref_column = source.foreign_key_column
         #        WHERE source.primary_key = key
+        # OData v4.01: Navigation by key uses INNER JOIN - related entity must exist
         query = """
         SELECT target.*
         FROM #{qualified_ref_table} target
-        JOIN #{collection_config.table_name} source ON target.#{ref_column} = source.#{foreign_key_column}
+        INNER JOIN #{collection_config.table_name} source ON target.#{ref_column} = source.#{foreign_key_column}
         WHERE source.id = #{key}
         """
 

@@ -210,31 +210,27 @@ defmodule Modeta.OData.QueryBuilder do
   end
 
   @doc """
-  Determines the appropriate JOIN type based on OData v4.01 semantics.
+  Determines the appropriate JOIN type based on OData v4.01 query semantics.
   
-  Follows OData CSDL specification for navigation property relationships:
-  - INNER JOIN: Required relationships (nullable: false, multiplicity: "1")
-  - LEFT JOIN: Optional relationships (nullable: true, multiplicity: "0..1") 
+  Follows OData specification for different operation types:
+  - $expand operations: Always LEFT JOIN (inclusive - show all entities)
+  - Navigation by key: Always INNER JOIN (entity must exist or 404)
   
   ## Parameters
-  - reference: Reference configuration map with nullable, multiplicity, join_type
+  - operation_type: :expand | :navigation_by_key
   
   ## Returns
   - :inner_join or :left_join atom
   """
-  def determine_join_type(reference) do
-    case reference do
-      # Explicit join_type specification takes precedence
-      %{"join_type" => "inner"} -> :inner_join
-      %{"join_type" => "left"} -> :left_join
+  def determine_join_type(operation_type) do
+    case operation_type do
+      # $expand: Always LEFT JOIN - OData standard inclusive semantics
+      :expand -> :left_join
       
-      # OData v4.01 CSDL semantics: non-nullable → INNER JOIN
-      %{"nullable" => false} -> :inner_join
+      # Navigation by key: Always INNER JOIN - entity must exist
+      :navigation_by_key -> :inner_join
       
-      # Required relationship (multiplicity "1") → INNER JOIN  
-      %{"multiplicity" => "1"} -> :inner_join
-      
-      # Default to LEFT JOIN for inclusive OData semantics
+      # Default to LEFT JOIN for OData compliance
       _ -> :left_join
     end
   end
@@ -285,12 +281,9 @@ defmodule Modeta.OData.QueryBuilder do
         # Build alias for the joined table
         join_alias = String.downcase(nav_prop)
         
-        # Determine JOIN type based on OData v4.01 semantics
-        join_type = determine_join_type(reference)
-        join_sql = case join_type do
-          :inner_join -> "INNER JOIN"
-          :left_join -> "LEFT JOIN"
-        end
+        # OData v4.01 specification: $expand always uses LEFT JOIN
+        # This ensures all primary entities are returned even if navigation property is null
+        join_sql = "LEFT JOIN"
 
         # Get target table columns for proper aliasing
         case get_table_columns_for_expand(qualified_ref_table, join_alias) do

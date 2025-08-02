@@ -353,167 +353,53 @@ defmodule Modeta.OData.QueryBuilderTest do
     end
   end
 
-  describe "determine_join_type/1" do
-    test "returns INNER JOIN for explicit join_type: inner" do
-      reference = %{"join_type" => "inner"}
-      result = QueryBuilder.determine_join_type(reference)
-      assert result == :inner_join
-    end
-
-    test "returns LEFT JOIN for explicit join_type: left" do
-      reference = %{"join_type" => "left"}
-      result = QueryBuilder.determine_join_type(reference)
+  describe "determine_join_type/1 - OData v4.01 semantics" do
+    test "returns LEFT JOIN for $expand operations" do
+      result = QueryBuilder.determine_join_type(:expand)
       assert result == :left_join
     end
 
-    test "returns INNER JOIN for non-nullable relationships" do
-      reference = %{"nullable" => false}
-      result = QueryBuilder.determine_join_type(reference)
+    test "returns INNER JOIN for navigation by key operations" do
+      result = QueryBuilder.determine_join_type(:navigation_by_key)
       assert result == :inner_join
     end
 
-    test "returns LEFT JOIN for nullable relationships" do
-      reference = %{"nullable" => true}
-      result = QueryBuilder.determine_join_type(reference)
-      assert result == :left_join
-    end
+    test "defaults to LEFT JOIN for unknown operation types" do
+      result1 = QueryBuilder.determine_join_type(:unknown)
+      result2 = QueryBuilder.determine_join_type(nil)
+      result3 = QueryBuilder.determine_join_type("expand")
 
-    test "returns INNER JOIN for required multiplicity (1)" do
-      reference = %{"multiplicity" => "1"}
-      result = QueryBuilder.determine_join_type(reference)
-      assert result == :inner_join
-    end
-
-    test "returns LEFT JOIN for optional multiplicity (0..1)" do
-      reference = %{"multiplicity" => "0..1"}
-      result = QueryBuilder.determine_join_type(reference)
-      assert result == :left_join
-    end
-
-    test "explicit join_type takes precedence over nullable" do
-      reference = %{"join_type" => "left", "nullable" => false}
-      result = QueryBuilder.determine_join_type(reference)
-      assert result == :left_join
-    end
-
-    test "explicit join_type takes precedence over multiplicity" do
-      reference = %{"join_type" => "inner", "multiplicity" => "0..1"}
-      result = QueryBuilder.determine_join_type(reference)
-      assert result == :inner_join
-    end
-
-    test "nullable takes precedence over multiplicity" do
-      reference = %{"nullable" => false, "multiplicity" => "0..1"}
-      result = QueryBuilder.determine_join_type(reference)
-      assert result == :inner_join
-    end
-
-    test "defaults to LEFT JOIN for unknown configurations" do
-      reference = %{}
-      result = QueryBuilder.determine_join_type(reference)
-      assert result == :left_join
-
-      reference2 = %{"some_other_key" => "value"}
-      result2 = QueryBuilder.determine_join_type(reference2)
-      assert result2 == :left_join
-    end
-
-    test "complex configuration with multiple attributes" do
-      # Real-world example: required customer relationship
-      reference = %{
-        "col" => "customer_id",
-        "ref" => "customers(id)",
-        "nullable" => false,
-        "multiplicity" => "1",
-        "join_type" => "inner"
-      }
-
-      result = QueryBuilder.determine_join_type(reference)
-      assert result == :inner_join
-    end
-
-    test "handles string and non-string values correctly" do
-      # Ensure string comparisons work
-      reference1 = %{"join_type" => "inner"}
-      reference2 = %{"join_type" => :inner}  # symbol instead of string
-
-      result1 = QueryBuilder.determine_join_type(reference1)
-      result2 = QueryBuilder.determine_join_type(reference2)
-
-      assert result1 == :inner_join
-      assert result2 == :left_join  # defaults because :inner != "inner"
+      assert result1 == :left_join
+      assert result2 == :left_join  
+      assert result3 == :left_join
     end
   end
 
-  describe "JOIN type integration with expand" do
-    # Note: These tests focus on the JOIN type determination logic.
-    # Full integration tests with actual database queries and collection
-    # configurations would require more complex test setup and are better
-    # suited for integration tests in the controller test suite.
+  describe "OData JOIN semantics integration" do
+    test "$expand operations always use LEFT JOIN per OData specification" do
+      # OData v4.01 requirement: $expand must be inclusive
+      # All primary entities should be returned even if navigation property is null
+      
+      join_type = QueryBuilder.determine_join_type(:expand)
+      assert join_type == :left_join
+    end
 
-    test "apply_expand_to_query respects JOIN type configuration" do
-      # This test verifies that the expand logic uses the determined JOIN type
-      # We'll test the structure without actual database execution
-
-      _base_query = "SELECT * FROM purchases"
-      _group_name = "sales_test"
-
-      # Mock collection config with INNER JOIN reference
-      collection_config = %{
-        table_name: "purchases",
-        references: [
-          %{
-            "col" => "customer_id",
-            "ref" => "customers(id)",
-            "nullable" => false,  # Should result in INNER JOIN
-            "multiplicity" => "1"
-          }
-        ]
-      }
-
-      # We can't easily test the full query generation without mocking Cache.query
-      # but we can verify the logic flows correctly by testing join type determination
-      reference = Enum.at(collection_config.references, 0)
-      join_type = QueryBuilder.determine_join_type(reference)
-
+    test "navigation by key operations use INNER JOIN per OData specification" do
+      # OData v4.01 requirement: /purchases(1)/Customers must return 404 if customer doesn't exist
+      # Related entity must exist for navigation to succeed
+      
+      join_type = QueryBuilder.determine_join_type(:navigation_by_key)
       assert join_type == :inner_join
     end
 
-    test "different references can have different JOIN types" do
-      references = [
-        %{
-          "col" => "customer_id",
-          "ref" => "customers(id)",
-          "nullable" => false,  # INNER JOIN
-          "multiplicity" => "1"
-        },
-        %{
-          "col" => "discount_id",
-          "ref" => "discounts(id)",
-          "nullable" => true,   # LEFT JOIN
-          "multiplicity" => "0..1"
-        },
-        %{
-          "col" => "category_id",
-          "ref" => "categories(id)",
-          "join_type" => "left"  # Explicit LEFT JOIN
-        }
-      ]
-
-      join_types = Enum.map(references, &QueryBuilder.determine_join_type/1)
-
-      assert join_types == [:inner_join, :left_join, :left_join]
-    end
-
-    test "backward compatibility - no JOIN configuration defaults to LEFT JOIN" do
-      # Legacy configuration without JOIN specifications
-      reference = %{
-        "col" => "customer_id",
-        "ref" => "customers(id)"
-      }
-
-      result = QueryBuilder.determine_join_type(reference)
-      assert result == :left_join
+    test "OData compliance ensures consistent behavior across operations" do
+      # Verify the two main OData operation types have different JOIN semantics
+      expand_join = QueryBuilder.determine_join_type(:expand)
+      navigation_join = QueryBuilder.determine_join_type(:navigation_by_key)
+      
+      assert expand_join == :left_join
+      assert navigation_join == :inner_join
+      assert expand_join != navigation_join
     end
   end
 end
