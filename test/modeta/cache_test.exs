@@ -68,12 +68,14 @@ defmodule Modeta.CacheTest do
       assert count_col.name == "customer_count"
     end
 
+    @tag capture_log: true
     test "handles file loading errors gracefully" do
       # Try to load a non-existent file
       non_existent_path = Path.join(@fixtures_path, "non_existent.csv")
       assert {:error, _} = Cache.load_csv(non_existent_path)
     end
 
+    @tag capture_log: true
     test "handles invalid SQL gracefully" do
       # Try to execute invalid SQL
       assert {:error, _} = Cache.query("INVALID SQL STATEMENT")
