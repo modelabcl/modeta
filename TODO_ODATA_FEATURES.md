@@ -143,7 +143,35 @@ This document tracks missing OData v4.01 protocol features for read-only operati
 - Enhance context URLs
 - Add comprehensive error handling
 
-### Phase 4 (Long-term - Future)
+### Phase 4 (Refactoring - Architecture Improvement)
+#### Problem: ODataController Too Heavy (1073 lines)
+Current controller has too many responsibilities mixing web and domain logic.
+
+#### Solution: Extract Domain Logic
+```
+lib/modeta/odata/                    # New OData Domain Context
+├── query_builder.ex                # SQL query construction (~300 lines)
+├── response_formatter.ex           # OData response formatting (~200 lines)  
+├── navigation_resolver.ex          # Navigation property logic (~150 lines)
+├── pagination_handler.ex           # Pagination & count logic (~100 lines)
+└── parameter_parser.ex             # Parameter parsing & validation (~50 lines)
+```
+
+#### Migration Strategy:
+1. **Phase 4a**: Extract `QueryBuilder` (build_query_with_options, SQL generation)
+2. **Phase 4b**: Extract `ResponseFormatter` (OData JSON formatting, context URLs)
+3. **Phase 4c**: Extract `NavigationResolver` (navigation property resolution)
+4. **Phase 4d**: Extract smaller modules (`PaginationHandler`, `ParameterParser`)
+5. **Phase 4e**: Slim controller (~150-200 lines) + comprehensive tests
+
+#### Benefits:
+- Single Responsibility Principle
+- Better testability and maintainability  
+- Reusable domain logic
+- Phoenix conventions (thin controllers)
+- Domain-Driven Design separation
+
+### Phase 5 (Long-term - Future)
 - Function imports for custom business logic
 - Delta query support
 - Batch request handling

@@ -2,6 +2,7 @@ defmodule ModetaWeb.ODataController do
   use ModetaWeb, :controller
 
   alias Modeta.{Cache, Collections}
+  alias Modeta.OData.QueryBuilder
 
   @doc """
   Returns OData service metadata (XML/CSDL format).
@@ -127,9 +128,9 @@ defmodule ModetaWeb.ODataController do
         skip_param = Map.get(params, "$skip")
         top_param = Map.get(params, "$top")
 
-        # Build query with all OData options support
+        # Build query with all OData options support using QueryBuilder
         final_query =
-          build_query_with_options(
+          QueryBuilder.build_query_with_options(
             base_query,
             group_name,
             collection_name,
@@ -229,7 +230,7 @@ defmodule ModetaWeb.ODataController do
         select_param = Map.get(params, "$select")
 
         final_query =
-          build_query_with_options(
+          QueryBuilder.build_query_with_options(
             entity_query,
             group_name,
             collection_name,
@@ -469,7 +470,7 @@ defmodule ModetaWeb.ODataController do
         #        JOIN source_table source ON target.ref_column = source.foreign_key_column
         #        WHERE source.primary_key = key
         query = """
-        SELECT target.* 
+        SELECT target.*
         FROM #{qualified_ref_table} target
         JOIN #{collection_config.table_name} source ON target.#{ref_column} = source.#{foreign_key_column}
         WHERE source.id = #{key}
@@ -662,69 +663,6 @@ defmodule ModetaWeb.ODataController do
     end
   end
 
-  # Apply $orderby to query by adding ORDER BY clause
-  defp apply_orderby_to_query(base_query, orderby_param) do
-    # Parse $orderby parameter - comma-separated list of "column [asc|desc]"
-    order_clauses =
-      orderby_param
-      |> String.split(",")
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.map(&parse_order_clause/1)
-      |> Enum.reject(&is_nil/1)
-
-    if length(order_clauses) > 0 do
-      order_by_clause = Enum.join(order_clauses, ", ")
-      "SELECT * FROM (#{base_query}) AS ordered_data ORDER BY #{order_by_clause}"
-    else
-      # If no valid order clauses, return original query
-      base_query
-    end
-  end
-
-  # Parse individual order clause like "name asc" or "age desc" or just "id"
-  defp parse_order_clause(clause) do
-    parts = String.split(clause, " ", trim: true)
-
-    case parts do
-      [column] ->
-        # Default to ascending if no direction specified
-        sanitized_column = sanitize_column_name(column)
-
-        if sanitized_column do
-          "#{sanitized_column} ASC"
-        else
-          nil
-        end
-
-      [column, direction] ->
-        # Check if direction is valid (case insensitive)
-        normalized_direction = String.downcase(direction)
-        sanitized_column = sanitize_column_name(column)
-
-        if normalized_direction in ["asc", "desc"] and sanitized_column do
-          "#{sanitized_column} #{String.upcase(normalized_direction)}"
-        else
-          # Invalid direction or column, skip this clause
-          nil
-        end
-
-      _ ->
-        # Invalid format, skip this clause
-        nil
-    end
-  end
-
-  # Sanitize column name to prevent SQL injection and validate column exists
-  defp sanitize_column_name(column) do
-    # Only allow alphanumeric characters, underscores, and dots (for qualified names)
-    if Regex.match?(~r/^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$/, column) do
-      column
-    else
-      # If invalid column name format, return nil to skip this clause
-      nil
-    end
-  end
 
   # Check if $count parameter requests total count inclusion
   defp should_include_count?(count_param) do
@@ -764,211 +702,7 @@ defmodule ModetaWeb.ODataController do
     end
   end
 
-  # Apply pagination to query with LIMIT and OFFSET
-  defp apply_pagination_to_query(base_query, skip_param, top_param) do
-    # Get configuration values
-    default_page_size = Application.get_env(:modeta, :default_page_size, 1000)
-    max_page_size = Application.get_env(:modeta, :max_page_size, 5000)
 
-    # Parse skip parameter (defaults to 0)
-    skip =
-      case skip_param do
-        nil ->
-          0
-
-        skip_str when is_binary(skip_str) ->
-          case Integer.parse(skip_str) do
-            {num, ""} when num >= 0 -> num
-            _ -> 0
-          end
-
-        skip_num when is_integer(skip_num) and skip_num >= 0 ->
-          skip_num
-
-        _ ->
-          0
-      end
-
-    # Parse top parameter (defaults to default_page_size)
-    top =
-      case top_param do
-        nil ->
-          default_page_size
-
-        top_str when is_binary(top_str) ->
-          case Integer.parse(top_str) do
-            {num, ""} when num > 0 -> min(num, max_page_size)
-            _ -> default_page_size
-          end
-
-        top_num when is_integer(top_num) and top_num > 0 ->
-          min(top_num, max_page_size)
-
-        _ ->
-          default_page_size
-      end
-
-    # Apply LIMIT and OFFSET to query
-    "SELECT * FROM (#{base_query}) AS paginated_data LIMIT #{top} OFFSET #{skip}"
-  end
-
-  # Apply $select to query by wrapping with SELECT clause containing only requested columns
-  defp apply_select_to_query(base_query, select_param) do
-    # Parse $select parameter - comma-separated list of column names
-    selected_columns =
-      select_param
-      |> String.split(",")
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-
-    if length(selected_columns) > 0 do
-      column_list = Enum.join(selected_columns, ", ")
-      "SELECT #{column_list} FROM (#{base_query}) AS selected_data"
-    else
-      # If no valid columns specified, return original query
-      base_query
-    end
-  end
-
-  # Build query with $expand, $select, $orderby, and pagination support
-  defp build_query_with_options(
-         base_query,
-         group_name,
-         collection_name,
-         filter_param,
-         expand_param,
-         select_param,
-         orderby_param,
-         skip_param,
-         top_param
-       ) do
-    # Get collection configuration to find references
-    case Collections.get_collection(group_name, collection_name) do
-      {:ok, collection_config} ->
-        # Step 1: Apply $expand (LEFT JOINs) if provided
-        query_with_joins =
-          if expand_param do
-            expanded_nav_props = String.split(expand_param, ",") |> Enum.map(&String.trim/1)
-            build_joins_for_expand(base_query, collection_config, expanded_nav_props, group_name)
-          else
-            base_query
-          end
-
-        # Step 2: Apply $select (column filtering) if provided
-        query_with_select =
-          if select_param do
-            apply_select_to_query(query_with_joins, select_param)
-          else
-            query_with_joins
-          end
-
-        # Step 3: Apply $filter 
-        query_with_filter =
-          Modeta.ODataFilter.apply_filter_to_query(query_with_select, filter_param)
-
-        # Step 4: Apply $orderby if provided
-        query_with_orderby =
-          if orderby_param do
-            apply_orderby_to_query(query_with_filter, orderby_param)
-          else
-            query_with_filter
-          end
-
-        # Step 5: Apply pagination (LIMIT/OFFSET) last
-        apply_pagination_to_query(query_with_orderby, skip_param, top_param)
-
-      {:error, :not_found} ->
-        # Fallback: apply $select, $filter, $orderby, and pagination to base query
-        query_with_select =
-          if select_param do
-            apply_select_to_query(base_query, select_param)
-          else
-            base_query
-          end
-
-        query_with_filter =
-          Modeta.ODataFilter.apply_filter_to_query(query_with_select, filter_param)
-
-        query_with_orderby =
-          if orderby_param do
-            apply_orderby_to_query(query_with_filter, orderby_param)
-          else
-            query_with_filter
-          end
-
-        apply_pagination_to_query(query_with_orderby, skip_param, top_param)
-    end
-  end
-
-  # Build LEFT JOIN clauses for expanded navigation properties
-  defp build_joins_for_expand(base_query, collection_config, expanded_nav_props, group_name) do
-    Enum.reduce(expanded_nav_props, base_query, fn nav_prop, query ->
-      case find_reference_for_navigation(collection_config.references, nav_prop) do
-        {:ok, reference} ->
-          add_join_for_navigation_property(
-            query,
-            reference,
-            nav_prop,
-            group_name,
-            collection_config.table_name
-          )
-
-        {:error, :no_reference} ->
-          # Skip unknown navigation properties
-          query
-      end
-    end)
-  end
-
-  # Add LEFT JOIN for a specific navigation property
-  defp add_join_for_navigation_property(
-         base_query,
-         reference,
-         nav_prop,
-         group_name,
-         _source_table
-       ) do
-    %{"col" => foreign_key_column, "ref" => ref_spec} = reference
-
-    case parse_reference_spec(ref_spec) do
-      {:ok, {ref_table, ref_column}} ->
-        # Ensure reference table has schema prefix
-        qualified_ref_table =
-          if String.contains?(ref_table, ".") do
-            ref_table
-          else
-            "#{group_name}.#{ref_table}"
-          end
-
-        # Build alias for the joined table
-        join_alias = String.downcase(nav_prop)
-
-        # Get target table columns for proper aliasing
-        case get_table_columns_for_expand(qualified_ref_table, join_alias) do
-          {:ok, aliased_columns} ->
-            # Transform base query to include LEFT JOIN with proper column aliasing
-            """
-            SELECT main.*, #{aliased_columns}
-            FROM (#{base_query}) AS main
-            LEFT JOIN #{qualified_ref_table} AS #{join_alias} 
-            ON main.#{foreign_key_column} = #{join_alias}.#{ref_column}
-            """
-
-          {:error, _} ->
-            # Fallback to simple join without column aliasing
-            """
-            SELECT main.*, #{join_alias}.*
-            FROM (#{base_query}) AS main
-            LEFT JOIN #{qualified_ref_table} AS #{join_alias} 
-            ON main.#{foreign_key_column} = #{join_alias}.#{ref_column}
-            """
-        end
-
-      {:error, _} ->
-        # Skip invalid reference specifications
-        base_query
-    end
-  end
 
   # Format rows with expanded navigation properties
   defp format_rows_with_expansion(rows, column_names, group_name, collection_name, expand_param) do
@@ -998,32 +732,6 @@ defmodule ModetaWeb.ODataController do
       {:error, :not_found} ->
         # Fallback to basic formatting
         format_rows_as_objects(rows, column_names)
-    end
-  end
-
-  # Get table columns for $expand with proper aliasing
-  defp get_table_columns_for_expand(qualified_table, alias) do
-    query = "DESCRIBE #{qualified_table}"
-
-    case Cache.query(query) do
-      {:ok, result} ->
-        rows = Cache.to_rows(result)
-        # Generate aliased column list: alias.col_name as alias_col_name
-        aliased_columns =
-          Enum.map_join(rows, ", ", fn row ->
-            case row do
-              [col_name, _type | _] when is_binary(col_name) ->
-                "#{alias}.#{col_name} as #{alias}_#{col_name}"
-
-              _ ->
-                "#{alias}.*"
-            end
-          end)
-
-        {:ok, aliased_columns}
-
-      {:error, reason} ->
-        {:error, reason}
     end
   end
 
