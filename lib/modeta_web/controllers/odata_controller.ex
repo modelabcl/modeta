@@ -2,7 +2,7 @@ defmodule ModetaWeb.ODataController do
   use ModetaWeb, :controller
 
   alias Modeta.{Cache, Collections}
-  alias Modeta.OData.QueryBuilder
+  alias Modeta.OData.{QueryBuilder, ResponseFormatter}
 
   @doc """
   Returns OData service metadata (XML/CSDL format).
@@ -56,7 +56,7 @@ defmodule ModetaWeb.ODataController do
     }
 
     # Respond with OData-specific content type based on Accept header
-    content_type = get_odata_content_type(accept_header)
+    content_type = ResponseFormatter.get_odata_content_type(accept_header)
 
     conn
     |> put_resp_header("odata-version", "4.0")
@@ -161,7 +161,7 @@ defmodule ModetaWeb.ODataController do
             # Process expanded data if $expand was requested
             formatted_rows =
               if expand_param do
-                format_rows_with_expansion(
+                ResponseFormatter.format_rows_with_expansion(
                   rows,
                   column_names,
                   group_name,
@@ -169,15 +169,15 @@ defmodule ModetaWeb.ODataController do
                   expand_param
                 )
               else
-                format_rows_as_objects(rows, column_names)
+                ResponseFormatter.format_rows_as_objects(rows, column_names)
               end
 
             # Build context URL with $select parameters if applicable
-            context_url = build_context_url(base_url, collection_name, select_param)
+            context_url = ResponseFormatter.build_context_url(base_url, collection_name, select_param)
 
             # Check if we need pagination and build @odata.nextLink
             response =
-              build_paginated_response(
+              ResponseFormatter.build_paginated_response(
                 context_url,
                 formatted_rows,
                 conn,
@@ -198,7 +198,7 @@ defmodule ModetaWeb.ODataController do
 
             # Get OData content type from Accept header
             accept_header = get_req_header(conn, "accept") |> List.first()
-            content_type = get_odata_content_type(accept_header)
+            content_type = ResponseFormatter.get_odata_content_type(accept_header)
 
             conn
             |> put_resp_header("odata-version", "4.0")
@@ -255,7 +255,7 @@ defmodule ModetaWeb.ODataController do
                 # Process expanded data if requested
                 entity =
                   if expand_param do
-                    format_rows_with_expansion(
+                    ResponseFormatter.format_rows_with_expansion(
                       [single_row],
                       column_names,
                       group_name,
@@ -264,12 +264,12 @@ defmodule ModetaWeb.ODataController do
                     )
                     |> List.first()
                   else
-                    format_single_row_as_object(single_row, column_names)
+                    ResponseFormatter.format_single_row_as_object(single_row, column_names)
                   end
 
                 # Build context URL with $select parameters if applicable
                 context_url =
-                  build_context_url(base_url, "#{collection_name}/$entity", select_param)
+                  ResponseFormatter.build_context_url(base_url, "#{collection_name}/$entity", select_param)
 
                 # OData single entity response format
                 response =
@@ -280,7 +280,7 @@ defmodule ModetaWeb.ODataController do
 
                 # Get OData content type from Accept header
                 accept_header = get_req_header(conn, "accept") |> List.first()
-                content_type = get_odata_content_type(accept_header)
+                content_type = ResponseFormatter.get_odata_content_type(accept_header)
 
                 conn
                 |> put_resp_header("odata-version", "4.0")
@@ -317,30 +317,6 @@ defmodule ModetaWeb.ODataController do
     Enum.map(columns, & &1.name)
   end
 
-  # Convert rows (list of lists) to list of objects using column names
-  defp format_rows_as_objects(rows, column_names) do
-    Enum.map(rows, fn row ->
-      column_names
-      |> Enum.zip(row)
-      |> Enum.into(%{})
-    end)
-  end
-
-  # Get appropriate OData content type based on Accept header
-  defp get_odata_content_type(accept_header) when is_binary(accept_header) do
-    metadata_type =
-      cond do
-        String.contains?(accept_header, "odata.metadata=full") -> "full"
-        String.contains?(accept_header, "odata.metadata=none") -> "none"
-        true -> "minimal"
-      end
-
-    # Build full OData content type like jaystack server
-    "application/json;odata.metadata=#{metadata_type};odata.streaming=true;IEEE754Compatible=false"
-  end
-
-  defp get_odata_content_type(_),
-    do: "application/json;odata.metadata=minimal;odata.streaming=true;IEEE754Compatible=false"
 
   # Get schema information for collections in a specific group
   defp get_collection_schemas_for_group(group_name, collection_names) do
@@ -485,7 +461,7 @@ defmodule ModetaWeb.ODataController do
             # For now, assume single entity (most common case)
             case rows do
               [single_row] ->
-                entity = format_single_row_as_object(single_row, column_names)
+                entity = ResponseFormatter.format_single_row_as_object(single_row, column_names)
                 base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}/#{group_name}"
 
                 response =
@@ -496,7 +472,7 @@ defmodule ModetaWeb.ODataController do
                   |> Map.merge(entity)
 
                 accept_header = get_req_header(conn, "accept") |> List.first()
-                content_type = get_odata_content_type(accept_header)
+                content_type = ResponseFormatter.get_odata_content_type(accept_header)
 
                 conn
                 |> put_resp_header("odata-version", "4.0")
@@ -510,7 +486,7 @@ defmodule ModetaWeb.ODataController do
 
               multiple_rows ->
                 # Multiple related entities - return as collection
-                entities = format_rows_as_objects(multiple_rows, column_names)
+                entities = ResponseFormatter.format_rows_as_objects(multiple_rows, column_names)
                 base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}/#{group_name}"
 
                 response = %{
@@ -519,7 +495,7 @@ defmodule ModetaWeb.ODataController do
                 }
 
                 accept_header = get_req_header(conn, "accept") |> List.first()
-                content_type = get_odata_content_type(accept_header)
+                content_type = ResponseFormatter.get_odata_content_type(accept_header)
 
                 conn
                 |> put_resp_header("odata-version", "4.0")
@@ -548,120 +524,6 @@ defmodule ModetaWeb.ODataController do
     end
   end
 
-  # Convert single row to object using column names
-  defp format_single_row_as_object(row, column_names) do
-    column_names
-    |> Enum.zip(row)
-    |> Enum.into(%{})
-  end
-
-  # Build paginated response with @odata.nextLink if needed
-  defp build_paginated_response(
-         context_url,
-         rows,
-         conn,
-         group_name,
-         collection_name,
-         params,
-         skip_param,
-         top_param
-       ) do
-    # Get configuration values
-    default_page_size = Application.get_env(:modeta, :default_page_size, 1000)
-    max_page_size = Application.get_env(:modeta, :max_page_size, 5000)
-
-    # Parse current pagination parameters
-    current_skip =
-      case skip_param do
-        nil ->
-          0
-
-        skip_str when is_binary(skip_str) ->
-          case Integer.parse(skip_str) do
-            {num, ""} when num >= 0 -> num
-            _ -> 0
-          end
-
-        skip_num when is_integer(skip_num) and skip_num >= 0 ->
-          skip_num
-
-        _ ->
-          0
-      end
-
-    current_top =
-      case top_param do
-        nil ->
-          default_page_size
-
-        top_str when is_binary(top_str) ->
-          case Integer.parse(top_str) do
-            {num, ""} when num > 0 -> min(num, max_page_size)
-            _ -> default_page_size
-          end
-
-        top_num when is_integer(top_num) and top_num > 0 ->
-          min(top_num, max_page_size)
-
-        _ ->
-          default_page_size
-      end
-
-    # Base response
-    base_response = %{
-      "@odata.context" => context_url,
-      "value" => rows
-    }
-
-    # If we got exactly the page size, there might be more results
-    if length(rows) == current_top do
-      # Build next page URL
-      next_skip = current_skip + current_top
-
-      next_link =
-        build_next_link_url(conn, group_name, collection_name, params, next_skip, current_top)
-
-      Map.put(base_response, "@odata.nextLink", next_link)
-    else
-      # No more results, return base response
-      base_response
-    end
-  end
-
-  # Build the URL for the next page
-  defp build_next_link_url(conn, group_name, collection_name, params, next_skip, current_top) do
-    # Build base URL
-    base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}/#{group_name}/#{collection_name}"
-
-    # Build query parameters, replacing $skip and preserving others
-    query_params =
-      params
-      |> Map.put("$skip", Integer.to_string(next_skip))
-      |> Map.put("$top", Integer.to_string(current_top))
-      |> Enum.map(fn {key, value} -> "#{key}=#{URI.encode(value)}" end)
-      |> Enum.join("&")
-
-    "#{base_url}?#{query_params}"
-  end
-
-  # Build OData context URL with $select parameter support
-  defp build_context_url(base_url, entity_set, nil), do: "#{base_url}/$metadata##{entity_set}"
-
-  defp build_context_url(base_url, entity_set, select_param) do
-    # Parse selected columns
-    selected_columns =
-      select_param
-      |> String.split(",")
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-
-    if length(selected_columns) > 0 do
-      select_clause = Enum.join(selected_columns, ",")
-      "#{base_url}/$metadata##{entity_set}(#{select_clause})"
-    else
-      "#{base_url}/$metadata##{entity_set}"
-    end
-  end
 
 
   # Check if $count parameter requests total count inclusion
@@ -704,78 +566,4 @@ defmodule ModetaWeb.ODataController do
 
 
 
-  # Format rows with expanded navigation properties
-  defp format_rows_with_expansion(rows, column_names, group_name, collection_name, expand_param) do
-    # Get collection configuration to understand which columns belong to expanded entities
-    case Collections.get_collection(group_name, collection_name) do
-      {:ok, collection_config} ->
-        expanded_nav_props = String.split(expand_param, ",") |> Enum.map(&String.trim/1)
-
-        Enum.map(rows, fn row ->
-          base_entity = format_single_row_as_object(row, column_names)
-
-          # Add expanded navigation properties
-          expanded_entity =
-            Enum.reduce(expanded_nav_props, base_entity, fn nav_prop, entity ->
-              case find_reference_for_navigation(collection_config.references, nav_prop) do
-                {:ok, _reference} ->
-                  add_expanded_property_to_entity(entity, nav_prop, row, column_names)
-
-                {:error, :no_reference} ->
-                  entity
-              end
-            end)
-
-          expanded_entity
-        end)
-
-      {:error, :not_found} ->
-        # Fallback to basic formatting
-        format_rows_as_objects(rows, column_names)
-    end
-  end
-
-  # Add expanded navigation property data to entity
-  defp add_expanded_property_to_entity(entity, nav_prop, row, column_names) do
-    # This is a simplified implementation
-    # In a full implementation, we'd need to separate columns by table alias
-    # For now, we'll create a placeholder expanded property
-
-    # Find columns that likely belong to the expanded entity
-    join_alias = String.downcase(nav_prop)
-
-    expanded_columns =
-      Enum.filter(column_names, fn col_name ->
-        String.starts_with?(String.downcase(col_name), join_alias <> "_") or
-          String.contains?(String.downcase(col_name), join_alias)
-      end)
-
-    if length(expanded_columns) > 0 do
-      # Extract expanded entity data
-      expanded_data =
-        expanded_columns
-        |> Enum.map(fn col_name ->
-          col_index = Enum.find_index(column_names, &(&1 == col_name))
-
-          if col_index do
-            # Remove alias prefix from column name
-            clean_col_name = String.replace(col_name, ~r/^#{join_alias}_?/i, "")
-            {clean_col_name, Enum.at(row, col_index)}
-          else
-            nil
-          end
-        end)
-        |> Enum.reject(&is_nil/1)
-        |> Enum.into(%{})
-
-      # Only add if we have actual data
-      if map_size(expanded_data) > 0 do
-        Map.put(entity, nav_prop, expanded_data)
-      else
-        entity
-      end
-    else
-      entity
-    end
-  end
 end
