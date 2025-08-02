@@ -60,7 +60,7 @@ defmodule Modeta.OData.PaginationHandlerTest do
       filter_param = "age gt 21"
 
       # Mock the filter application (this would be handled by ODataFilter module)
-      filtered_query = "SELECT * FROM customers WHERE age > 21"
+      _filtered_query = "SELECT * FROM customers WHERE age > 21"
 
       # We need to mock Modeta.ODataFilter.apply_filter_to_query
       # For testing purposes, we'll test the structure

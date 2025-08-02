@@ -1,0 +1,159 @@
+# Enhanced Collections Configuration Examples with JOIN Type Support
+#
+# This file demonstrates how to configure different JOIN types based on 
+# OData v4.01 CSDL navigation property semantics.
+
+collections:
+  # Sales domain with multiple relationship types
+  sales_demo:
+    - name: customers
+      materialized: true
+      origin: "select * from read_csv('data/customers.csv')"
+      primary_key:
+        - id
+
+    - name: orders
+      materialized: true  
+      origin: "select * from read_csv('data/orders.csv')"
+      primary_key:
+        - id
+      references:
+        # Required relationship: Every order MUST have a customer
+        - col: customer_id
+          ref: customers(id)
+          nullable: false        # Required relationship → INNER JOIN
+          multiplicity: "1"      # Exactly one customer per order
+          join_type: inner       # Explicit INNER JOIN
+          
+        # Optional relationship: Order may have a discount applied
+        - col: discount_id
+          ref: discounts(id)  
+          nullable: true         # Optional relationship → LEFT JOIN
+          multiplicity: "0..1"   # Zero or one discount per order
+          join_type: left        # Explicit LEFT JOIN
+
+    - name: order_items
+      materialized: true
+      origin: "select * from read_csv('data/order_items.csv')"
+      primary_key:
+        - id
+      references:
+        # Required: Every order item belongs to an order
+        - col: order_id
+          ref: orders(id)
+          nullable: false        # Required → INNER JOIN
+          multiplicity: "1"
+          
+        # Required: Every order item has a product
+        - col: product_id
+          ref: products(id)
+          nullable: false        # Required → INNER JOIN
+          multiplicity: "1"
+
+    - name: products
+      materialized: true
+      origin: "select * from read_csv('data/products.csv')"
+      primary_key:
+        - id
+      references:
+        # Required: Every product has a category
+        - col: category_id
+          ref: categories(id)
+          nullable: false        # Required → INNER JOIN
+          multiplicity: "1"
+          
+        # Optional: Product may have a supplier
+        - col: supplier_id
+          ref: suppliers(id)
+          nullable: true         # Optional → LEFT JOIN
+          multiplicity: "0..1"
+
+    - name: categories
+      materialized: true
+      origin: "select * from read_csv('data/categories.csv')"
+      primary_key:
+        - id
+      references:
+        # Optional: Category may have a parent category (self-reference)
+        - col: parent_category_id
+          ref: categories(id)
+          nullable: true         # Optional → LEFT JOIN
+          multiplicity: "0..1"
+
+    - name: suppliers
+      materialized: true
+      origin: "select * from read_csv('data/suppliers.csv')"
+      primary_key:
+        - id
+
+    - name: discounts
+      materialized: true
+      origin: "select * from read_csv('data/discounts.csv')"
+      primary_key:
+        - id
+
+  # User profile domain with different relationship patterns
+  user_profiles:
+    - name: users
+      materialized: true
+      origin: "select * from read_csv('data/users.csv')"
+      primary_key:
+        - id
+
+    - name: user_profiles
+      materialized: true
+      origin: "select * from read_csv('data/user_profiles.csv')"
+      primary_key:
+        - user_id
+      references:
+        # Required: Every profile belongs to a user (1:1 relationship)
+        - col: user_id
+          ref: users(id)
+          nullable: false        # Required → INNER JOIN
+          multiplicity: "1"
+
+    - name: user_preferences
+      materialized: true
+      origin: "select * from read_csv('data/user_preferences.csv')"
+      primary_key:
+        - id
+      references:
+        # Required: Every preference setting belongs to a user
+        - col: user_id
+          ref: users(id)
+          nullable: false        # Required → INNER JOIN
+          multiplicity: "1"
+          
+        # Optional: Preference may reference a theme
+        - col: theme_id
+          ref: themes(id)
+          nullable: true         # Optional → LEFT JOIN
+          multiplicity: "0..1"
+
+    - name: themes
+      materialized: true
+      origin: "select * from read_csv('data/themes.csv')"
+      primary_key:
+        - id
+
+# JOIN Type Behavior Examples:
+#
+# 1. INNER JOIN (nullable: false, multiplicity: "1")
+#    - Only returns records where the related entity exists
+#    - Example: orders → customers (every order must have a customer)
+#    - SQL: INNER JOIN customers ON orders.customer_id = customers.id
+#
+# 2. LEFT JOIN (nullable: true, multiplicity: "0..1")  
+#    - Returns all primary records, even if related entity doesn't exist
+#    - Example: orders → discounts (order may not have a discount)
+#    - SQL: LEFT JOIN discounts ON orders.discount_id = discounts.id
+#
+# 3. Backward Compatibility
+#    - References without join configuration default to LEFT JOIN
+#    - Maintains existing behavior while enabling optimization
+#
+# 4. Configuration Priority (highest to lowest):
+#    - explicit join_type: "inner"/"left"
+#    - nullable: false → INNER, true → LEFT
+#    - multiplicity: "1" → INNER, "0..1" → LEFT
+#    - default: LEFT JOIN

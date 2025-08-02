@@ -209,6 +209,36 @@ defmodule Modeta.OData.QueryBuilder do
     end)
   end
 
+  @doc """
+  Determines the appropriate JOIN type based on OData v4.01 semantics.
+  
+  Follows OData CSDL specification for navigation property relationships:
+  - INNER JOIN: Required relationships (nullable: false, multiplicity: "1")
+  - LEFT JOIN: Optional relationships (nullable: true, multiplicity: "0..1") 
+  
+  ## Parameters
+  - reference: Reference configuration map with nullable, multiplicity, join_type
+  
+  ## Returns
+  - :inner_join or :left_join atom
+  """
+  def determine_join_type(reference) do
+    case reference do
+      # Explicit join_type specification takes precedence
+      %{"join_type" => "inner"} -> :inner_join
+      %{"join_type" => "left"} -> :left_join
+      
+      # OData v4.01 CSDL semantics: non-nullable → INNER JOIN
+      %{"nullable" => false} -> :inner_join
+      
+      # Required relationship (multiplicity "1") → INNER JOIN  
+      %{"multiplicity" => "1"} -> :inner_join
+      
+      # Default to LEFT JOIN for inclusive OData semantics
+      _ -> :left_join
+    end
+  end
+
   # Find the reference configuration for a navigation property
   defp find_reference_for_navigation(references, nav_prop) do
     # Navigation property name should match the referenced table name
@@ -232,7 +262,7 @@ defmodule Modeta.OData.QueryBuilder do
     end
   end
 
-  # Add LEFT JOIN for a specific navigation property
+  # Add JOIN for a specific navigation property (INNER or LEFT based on relationship)
   defp add_join_for_navigation_property(
          base_query,
          reference,
@@ -254,15 +284,22 @@ defmodule Modeta.OData.QueryBuilder do
 
         # Build alias for the joined table
         join_alias = String.downcase(nav_prop)
+        
+        # Determine JOIN type based on OData v4.01 semantics
+        join_type = determine_join_type(reference)
+        join_sql = case join_type do
+          :inner_join -> "INNER JOIN"
+          :left_join -> "LEFT JOIN"
+        end
 
         # Get target table columns for proper aliasing
         case get_table_columns_for_expand(qualified_ref_table, join_alias) do
           {:ok, aliased_columns} ->
-            # Transform base query to include LEFT JOIN with proper column aliasing
+            # Transform base query to include JOIN with proper column aliasing
             """
             SELECT main.*, #{aliased_columns}
             FROM (#{base_query}) AS main
-            LEFT JOIN #{qualified_ref_table} AS #{join_alias}
+            #{join_sql} #{qualified_ref_table} AS #{join_alias}
             ON main.#{foreign_key_column} = #{join_alias}.#{ref_column}
             """
 
@@ -271,7 +308,7 @@ defmodule Modeta.OData.QueryBuilder do
             """
             SELECT main.*, #{join_alias}.*
             FROM (#{base_query}) AS main
-            LEFT JOIN #{qualified_ref_table} AS #{join_alias}
+            #{join_sql} #{qualified_ref_table} AS #{join_alias}
             ON main.#{foreign_key_column} = #{join_alias}.#{ref_column}
             """
         end
