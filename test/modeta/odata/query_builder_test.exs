@@ -370,7 +370,7 @@ defmodule Modeta.OData.QueryBuilderTest do
       result3 = QueryBuilder.determine_join_type("expand")
 
       assert result1 == :left_join
-      assert result2 == :left_join  
+      assert result2 == :left_join
       assert result3 == :left_join
     end
   end
@@ -379,7 +379,7 @@ defmodule Modeta.OData.QueryBuilderTest do
     test "$expand operations always use LEFT JOIN per OData specification" do
       # OData v4.01 requirement: $expand must be inclusive
       # All primary entities should be returned even if navigation property is null
-      
+
       join_type = QueryBuilder.determine_join_type(:expand)
       assert join_type == :left_join
     end
@@ -387,7 +387,7 @@ defmodule Modeta.OData.QueryBuilderTest do
     test "navigation by key operations use INNER JOIN per OData specification" do
       # OData v4.01 requirement: /purchases(1)/Customers must return 404 if customer doesn't exist
       # Related entity must exist for navigation to succeed
-      
+
       join_type = QueryBuilder.determine_join_type(:navigation_by_key)
       assert join_type == :inner_join
     end
@@ -396,7 +396,7 @@ defmodule Modeta.OData.QueryBuilderTest do
       # Verify the two main OData operation types have different JOIN semantics
       expand_join = QueryBuilder.determine_join_type(:expand)
       navigation_join = QueryBuilder.determine_join_type(:navigation_by_key)
-      
+
       assert expand_join == :left_join
       assert navigation_join == :inner_join
       assert expand_join != navigation_join

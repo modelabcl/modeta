@@ -9,6 +9,7 @@ defmodule Modeta.OData.QueryBuilder do
   """
 
   alias Modeta.{Collections, Cache}
+  alias Modeta.RelationshipDiscovery
 
   @doc """
   Builds a complete SQL query with all OData options applied.
@@ -190,9 +191,10 @@ defmodule Modeta.OData.QueryBuilder do
   end
 
   # Build LEFT JOIN clauses for expanded navigation properties
+  # Enhanced to support both manual configuration and automatic discovery
   defp build_joins_for_expand(base_query, collection_config, expanded_nav_props, group_name) do
     Enum.reduce(expanded_nav_props, base_query, fn nav_prop, query ->
-      case find_reference_for_navigation(collection_config.references, nav_prop) do
+      case find_navigation_reference(collection_config, group_name, nav_prop) do
         {:ok, reference} ->
           add_join_for_navigation_property(
             query,
@@ -210,15 +212,88 @@ defmodule Modeta.OData.QueryBuilder do
   end
 
   @doc """
+  Finds navigation reference using both manual configuration and automatic discovery.
+
+  This function provides a unified interface for finding navigation references
+  whether they are defined manually in collections.yml or discovered automatically
+  from DuckDB foreign key constraints.
+
+  ## Parameters
+  - collection_config: Manual collection configuration
+  - group_name: Schema/group name for automatic discovery
+  - nav_prop: Navigation property name to find
+
+  ## Returns
+  - {:ok, reference} when reference is found (compatible with existing format)
+  - {:error, :no_reference} when navigation property is not found
+  """
+  def find_navigation_reference(collection_config, group_name, nav_prop) do
+    # First try manual configuration (existing behavior)
+    case find_reference_for_navigation(collection_config.references, nav_prop) do
+      {:ok, ref} ->
+        {:ok, ref}
+
+      {:error, :no_reference} ->
+        # Try automatic discovery from DuckDB
+        find_automatic_navigation_reference(group_name, collection_config.table_name, nav_prop)
+    end
+  end
+
+  # Find navigation reference using automatic DuckDB foreign key discovery
+  defp find_automatic_navigation_reference(schema_name, table_name, nav_prop) do
+    case RelationshipDiscovery.get_navigation_properties(schema_name, table_name) do
+      {:ok, nav_props} ->
+        # Look in both belongs_to and has_many relationships
+        all_nav_props = nav_props.belongs_to ++ nav_props.has_many
+
+        matching_prop =
+          Enum.find(all_nav_props, fn prop ->
+            String.downcase(prop.name) == String.downcase(nav_prop)
+          end)
+
+        case matching_prop do
+          nil ->
+            {:error, :no_reference}
+
+          prop ->
+            # Convert discovered relationship to format compatible with existing code
+            reference = convert_discovered_to_reference_format(prop)
+            {:ok, reference}
+        end
+    end
+  end
+
+  # Convert discovered navigation property to reference format expected by existing code
+  defp convert_discovered_to_reference_format(nav_prop) do
+    case nav_prop.type do
+      :belongs_to ->
+        # For belongs_to: source table has foreign key pointing to target table
+        %{
+          "col" => nav_prop.source_column,
+          "ref" => "#{nav_prop.target_table}(#{nav_prop.target_column})"
+        }
+
+      :has_many ->
+        # For has_many: reverse the relationship - target table has foreign key pointing to source
+        %{
+          # Column on current table
+          "col" => nav_prop.source_column,
+          # Target table and its foreign key
+          "ref" => "#{nav_prop.target_table}(#{nav_prop.target_column})"
+        }
+    end
+  end
+
+  @doc """
   Determines the appropriate JOIN type based on OData v4.01 query semantics.
-  
+
   Follows OData specification for different operation types:
   - $expand operations: Always LEFT JOIN (inclusive - show all entities)
   - Navigation by key: Always INNER JOIN (entity must exist or 404)
-  
+
   ## Parameters
   - operation_type: :expand | :navigation_by_key
-  
+
   ## Returns
   - :inner_join or :left_join atom
   """
@@ -226,19 +301,32 @@ defmodule Modeta.OData.QueryBuilder do
     case operation_type do
       # $expand: Always LEFT JOIN - OData standard inclusive semantics
       :expand -> :left_join
-      
       # Navigation by key: Always INNER JOIN - entity must exist
       :navigation_by_key -> :inner_join
-      
       # Default to LEFT JOIN for OData compliance
       _ -> :left_join
     end
   end
 
   # Find the reference configuration for a navigation property
+  # Enhanced to support both manual configuration and automatic discovery
   defp find_reference_for_navigation(references, nav_prop) do
-    # Navigation property name should match the referenced table name
-    # For reference like "col: customer_id, ref: customers(id)", nav_prop would be "Customers"
+    # First try manual configuration (existing behavior)
+    manual_ref = find_manual_reference(references, nav_prop)
+
+    case manual_ref do
+      {:ok, ref} ->
+        {:ok, ref}
+
+      {:error, :no_reference} ->
+        # Fallback to automatic discovery (not implemented in this function)
+        # This allows for future enhancement without breaking existing behavior
+        {:error, :no_reference}
+    end
+  end
+
+  # Find reference using manual configuration (original behavior)
+  defp find_manual_reference(references, nav_prop) do
     target_ref =
       Enum.find(references, fn %{"ref" => ref_spec} ->
         case parse_reference_spec(ref_spec) do
@@ -280,7 +368,7 @@ defmodule Modeta.OData.QueryBuilder do
 
         # Build alias for the joined table
         join_alias = String.downcase(nav_prop)
-        
+
         # OData v4.01 specification: $expand always uses LEFT JOIN
         # This ensures all primary entities are returned even if navigation property is null
         join_sql = "LEFT JOIN"

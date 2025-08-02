@@ -8,6 +8,8 @@ collections:
     - name: purchases
       origin: "select * from read_csv('test/fixtures/purchases.csv')"
       materialized: true
+      primary_key:
+        - id
       references:
         - col: customer_id
           ref: customers(id)
