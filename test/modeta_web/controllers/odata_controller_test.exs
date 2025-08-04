@@ -670,7 +670,7 @@ defmodule ModetaWeb.ODataControllerTest do
 
       # First customer should be last alphabetically
       first_customer = List.first(customers)
-      # Should be the name that comes last alphabetically  
+      # Should be the name that comes last alphabetically
       assert first_customer["name"] == List.last(Enum.sort(customer_names))
     end
 
@@ -1002,7 +1002,8 @@ defmodule ModetaWeb.ODataControllerTest do
   end
 
   describe "metadata endpoint" do
-    test "GET /sales_test/$metadata returns XML with OpenType entities for Excel compatibility", %{conn: conn} do
+    test "GET /sales_test/$metadata returns XML with OpenType entities for Excel compatibility",
+         %{conn: conn} do
       conn = get(conn, ~p"/sales_test/$metadata")
 
       assert response = response(conn, 200)
@@ -1012,22 +1013,22 @@ defmodule ModetaWeb.ODataControllerTest do
       # Should contain XML metadata structure
       assert response =~ ~r/<edmx:Edmx.*Version="4.0"/
       assert response =~ ~r/<Schema.*Namespace="Default"/
-      
+
       # All EntityType elements should have OpenType="true" for Excel compatibility
       # This allows Excel to access nested properties like 'city' within complex types
       entity_types = Regex.scan(~r/<EntityType[^>]*>/, response)
-      
+
       Enum.each(entity_types, fn [entity_type_tag] ->
-        assert String.contains?(entity_type_tag, "OpenType=\"true\""), 
+        assert String.contains?(entity_type_tag, "OpenType=\"true\""),
                "EntityType should have OpenType=\"true\" for Excel compatibility: #{entity_type_tag}"
       end)
-      
+
       # Should have customers entity with OpenType
       assert response =~ ~r/<EntityType Name="Customers"[^>]*OpenType="true"/
-      
-      # Should have purchases entity with OpenType  
+
+      # Should have purchases entity with OpenType
       assert response =~ ~r/<EntityType Name="Purchases"[^>]*OpenType="true"/
-      
+
       # Should contain EntityContainer and EntitySets
       assert response =~ ~r/<EntityContainer Name="Default"/
       assert response =~ ~r/<EntitySet Name="customers"/

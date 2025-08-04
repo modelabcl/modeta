@@ -10,8 +10,8 @@ defmodule Modeta.Cache do
   @doc """
   Starts the DuckDB cache GenServer.
   """
-  def start_link(ddb) do
-    GenServer.start_link(__MODULE__, ddb, name: __MODULE__)
+  def start_link(_opts \\ []) do
+    GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
   end
 
   @doc """
@@ -46,9 +46,44 @@ defmodule Modeta.Cache do
   # GenServer Callbacks
 
   @impl true
-  def init(ddb) do
-    Logger.info("DuckDB Cache GenServer initialized with database reference")
-    {:ok, %{db: ddb}}
+  def init(:ok) do
+    Logger.info("Initializing DuckDB Cache GenServer...")
+    # Continue with DuckDB database creation
+    {:ok, %{db: nil}, {:continue, :initialize_database}}
+  end
+
+  @impl true
+  def handle_continue(:initialize_database, state) do
+    Logger.info("Creating DuckDB database...")
+
+    case create_duckdb_database() do
+      {:ok, ddb} ->
+        Logger.info("DuckDB database created successfully")
+        # Continue with data loading
+        {:noreply, %{db: ddb}, {:continue, :load_data}}
+
+      {:error, reason} ->
+        Logger.error("Failed to create DuckDB database: #{inspect(reason)}")
+        {:stop, {:duckdb_init_failed, reason}, state}
+    end
+  end
+
+  @impl true
+  def handle_continue(:load_data, %{db: _ddb} = state) do
+    Logger.info("Starting data initialization...")
+
+    # Load data asynchronously to avoid blocking
+    Task.start(fn ->
+      case Modeta.DataLoader.initialize() do
+        :ok ->
+          Logger.info("✓ Data initialization completed successfully")
+
+        {:error, reason} ->
+          Logger.error("✗ Data initialization failed: #{inspect(reason)}")
+      end
+    end)
+
+    {:noreply, state}
   end
 
   @impl true
@@ -139,6 +174,45 @@ defmodule Modeta.Cache do
 
       {:error, _} ->
         []
+    end
+  end
+
+  # Create DuckDB database and install JSON extension
+  defp create_duckdb_database do
+    # Get database path from config with environment-specific fallback
+    db_path = Application.get_env(:modeta, :duckdb_path)
+    absolute_path = Path.expand(db_path)
+
+    # Ensure directory exists
+    absolute_path |> Path.dirname() |> File.mkdir_p!()
+
+    require Logger
+    Logger.info("Opening DuckDB database at: #{absolute_path}")
+
+    case Duckdbex.open(absolute_path) do
+      {:ok, ddb} ->
+        case install_json_extension_on_database(ddb) do
+          :ok ->
+            {:ok, ddb}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Install JSON extension and enable auto-loading on the database
+  defp install_json_extension_on_database(ddb) do
+    with {:ok, conn} <- Duckdbex.connection(ddb),
+         {:ok, _} <- Duckdbex.query(conn, "SET autoinstall_known_extensions=1"),
+         {:ok, _} <- Duckdbex.query(conn, "SET autoload_known_extensions=1"),
+         {:ok, _} <- Duckdbex.query(conn, "INSTALL bigquery FROM community; LOAD bigquery;") do
+      :ok
+    else
+      error -> error
     end
   end
 end
