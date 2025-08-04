@@ -324,8 +324,8 @@ defmodule Modeta.OData.ResponseFormatterTest do
     end
 
     test "includes @odata.nextLink when page is full", %{conn: conn, context_url: context_url} do
-      # Create exactly 5 rows (matching the top param)
-      rows = Enum.map(1..5, fn i -> %{"id" => i, "name" => "User #{i}"} end)
+      # Create 6 rows (5 requested + 1 extra to indicate more data)
+      rows = Enum.map(1..6, fn i -> %{"id" => i, "name" => "User #{i}"} end)
       params = %{"$filter" => "active eq true"}
 
       result =
@@ -340,8 +340,11 @@ defmodule Modeta.OData.ResponseFormatterTest do
           "5"
         )
 
+      # Should return only first 5 rows (since we requested top=5)
+      expected_rows = Enum.take(rows, 5)
+
       assert result["@odata.context"] == context_url
-      assert result["value"] == rows
+      assert result["value"] == expected_rows
       assert Map.has_key?(result, "@odata.nextLink")
 
       next_link = result["@odata.nextLink"]
@@ -371,7 +374,8 @@ defmodule Modeta.OData.ResponseFormatterTest do
     end
 
     test "handles custom skip and top parameters", %{conn: conn, context_url: context_url} do
-      rows = Enum.map(1..10, fn i -> %{"id" => i, "name" => "User #{i}"} end)
+      # Create 11 rows (10 requested + 1 extra to indicate more data)
+      rows = Enum.map(1..11, fn i -> %{"id" => i, "name" => "User #{i}"} end)
 
       result =
         ResponseFormatter.build_paginated_response(
@@ -385,14 +389,19 @@ defmodule Modeta.OData.ResponseFormatterTest do
           "10"
         )
 
+      # Should return only first 10 rows (since we requested top=10)
+      expected_rows = Enum.take(rows, 10)
+      assert result["value"] == expected_rows
+      assert Map.has_key?(result, "@odata.nextLink")
+
       next_link = result["@odata.nextLink"]
       assert String.contains?(next_link, "$skip=30")
       assert String.contains?(next_link, "$top=10")
     end
 
     test "enforces maximum page size limit", %{conn: conn, context_url: context_url} do
-      # Request 10000 records (above max of 5000)
-      rows = Enum.map(1..5000, fn i -> %{"id" => i, "name" => "User #{i}"} end)
+      # Request 10000 records (above max of 5000), create 5001 rows to indicate more data
+      rows = Enum.map(1..5001, fn i -> %{"id" => i, "name" => "User #{i}"} end)
 
       result =
         ResponseFormatter.build_paginated_response(
@@ -405,6 +414,11 @@ defmodule Modeta.OData.ResponseFormatterTest do
           nil,
           "10000"
         )
+
+      # Should return only first 5000 rows (max page size limit)
+      expected_rows = Enum.take(rows, 5000)
+      assert result["value"] == expected_rows
+      assert Map.has_key?(result, "@odata.nextLink")
 
       next_link = result["@odata.nextLink"]
       # Should be limited to max page size of 5000
@@ -444,8 +458,8 @@ defmodule Modeta.OData.ResponseFormatterTest do
     end
 
     test "handles invalid top values", %{conn: conn, context_url: context_url} do
-      # Create exactly 1000 rows (default page size)
-      rows = Enum.map(1..1000, fn i -> %{"id" => i, "name" => "User #{i}"} end)
+      # Create 1001 rows (1000 default page size + 1 to indicate more data)
+      rows = Enum.map(1..1001, fn i -> %{"id" => i, "name" => "User #{i}"} end)
 
       result1 =
         ResponseFormatter.build_paginated_response(
@@ -480,7 +494,8 @@ defmodule Modeta.OData.ResponseFormatterTest do
     end
 
     test "handles integer parameters", %{conn: conn, context_url: context_url} do
-      rows = Enum.map(1..15, fn i -> %{"id" => i, "name" => "User #{i}"} end)
+      # Create 16 rows (15 requested + 1 to indicate more data)
+      rows = Enum.map(1..16, fn i -> %{"id" => i, "name" => "User #{i}"} end)
 
       result =
         ResponseFormatter.build_paginated_response(
@@ -493,6 +508,11 @@ defmodule Modeta.OData.ResponseFormatterTest do
           50,
           15
         )
+
+      # Should return only first 15 rows (since we requested top=15)
+      expected_rows = Enum.take(rows, 15)
+      assert result["value"] == expected_rows
+      assert Map.has_key?(result, "@odata.nextLink")
 
       next_link = result["@odata.nextLink"]
       assert String.contains?(next_link, "$skip=65")

@@ -8,6 +8,10 @@ collections:
     - name: purchases
       origin: "select * from read_csv('test/fixtures/purchases.csv')"
       materialized: true
+      before_create:
+        - "select 1;"
+      after_create:
+        - "select 2;"
       primary_key:
         - id
       references:

@@ -12,7 +12,10 @@ config :modeta,
   collections_file: "config/collections.yml",
   # OData pagination settings
   default_page_size: 1000,
-  max_page_size: 5000
+  max_page_size: 5000,
+  # Excel-specific pagination settings (smaller pages to prevent bulk downloading)
+  excel_default_page_size: 200,
+  excel_max_page_size: 1000
 
 # Configures the endpoint
 config :modeta, ModetaWeb.Endpoint,

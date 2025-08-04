@@ -348,21 +348,9 @@ defmodule ModetaWeb.ODataController do
     end
   end
 
-  # Get column names for a collection by querying its schema
+  # Get column names for a collection using schema cache
   defp get_column_names_for_collection(group_name, collection_name) do
-    case Collections.get_collection(group_name, collection_name) do
-      {:ok, _collection_config} ->
-        case get_table_schema_for_group(group_name, collection_name) do
-          {:ok, schema} ->
-            Enum.map(schema, & &1.name)
-
-          {:error, _} ->
-            []
-        end
-
-      {:error, _} ->
-        []
-    end
+    Modeta.SchemaCache.get_column_names(group_name, collection_name)
   end
 
   # Get column names in the order they appear in the query result
@@ -524,40 +512,8 @@ defmodule ModetaWeb.ODataController do
     end
   end
 
-  # Get DuckDB table schema for a collection in a specific group
+  # Get DuckDB table schema for a collection using schema cache
   defp get_table_schema_for_group(group_name, collection_name) do
-    with {:ok, query} <- Collections.get_query(group_name, collection_name),
-         {:ok, _} <- create_temp_view_for_group(group_name, collection_name, query),
-         {:ok, result} <- Cache.describe_table("temp_#{group_name}_#{collection_name}_schema") do
-      schema = extract_schema_from_describe(result)
-      # Clean up temp view
-      Cache.query("DROP VIEW IF EXISTS temp_#{group_name}_#{collection_name}_schema")
-      {:ok, schema}
-    end
-  end
-
-  defp create_temp_view_for_group(group_name, collection_name, query) do
-    temp_query = "CREATE OR REPLACE VIEW temp_#{group_name}_#{collection_name}_schema AS #{query}"
-    Cache.query(temp_query)
-  end
-
-  # Extract schema information from DESCRIBE result
-  defp extract_schema_from_describe(result) do
-    rows = Cache.to_rows(result)
-
-    # DESCRIBE typically returns: column_name, column_type, null, key, default, extra
-    # For DuckDBex, we assume the first two columns are name and type
-    Enum.map(rows, fn row ->
-      case row do
-        [name, type | _] ->
-          %{
-            name: name,
-            type: type
-          }
-
-        _ ->
-          %{name: "unknown", type: "unknown"}
-      end
-    end)
+    Modeta.SchemaCache.get_schema(group_name, collection_name)
   end
 end
