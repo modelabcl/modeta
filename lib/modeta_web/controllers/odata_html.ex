@@ -23,7 +23,11 @@ defmodule ModetaWeb.ODataHTML do
         manual_nav_xml = render_navigation_properties(references, collection_schemas)
         auto_nav_xml = render_automatic_navigation_properties(auto_nav_props, collection_schemas)
 
-        ~s(<EntityType Name="#{String.capitalize(name)}">#{key_xml}#{properties_xml}#{manual_nav_xml}#{auto_nav_xml}</EntityType>)
+        # Always mark entities as OpenType for Excel compatibility with nested properties
+        # This allows Excel to access nested properties like 'city' within complex types
+        open_type_attr = " OpenType=\"true\""
+        
+        ~s(<EntityType Name="#{String.capitalize(name)}"#{open_type_attr}>#{key_xml}#{properties_xml}#{manual_nav_xml}#{auto_nav_xml}</EntityType>)
       end)
 
     entity_sets =
