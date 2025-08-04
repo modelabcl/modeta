@@ -22,16 +22,18 @@ defmodule Modeta.Application do
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Modeta.Supervisor]
+
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
         # Warm the schema cache after startup
-        Task.start(fn -> 
+        Task.start(fn ->
           # Wait a bit for data loading to complete
           Process.sleep(1000)
           Modeta.SchemaCache.warm_cache()
         end)
+
         {:ok, pid}
-        
+
       error ->
         error
     end
