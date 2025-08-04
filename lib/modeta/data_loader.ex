@@ -42,16 +42,25 @@ defmodule Modeta.DataLoader do
 
   @doc """
   Check if a table exists in DuckDB.
+  Supports both schema-qualified names (schema.table) and simple table names.
   """
   def table_exists?(table_name) do
-    # Use SHOW TABLES command which works with auto-loaded extensions
-    query = "SHOW TABLES"
+    query =
+      case String.split(table_name, ".") do
+        [schema, table] ->
+          """
+          SELECT 1 FROM information_schema.tables 
+          WHERE table_schema = '#{schema}' AND table_name = '#{table}'
+          """
+
+        [table] ->
+          "SELECT 1 FROM information_schema.tables WHERE table_name = '#{table}'"
+      end
 
     case Cache.query(query) do
       {:ok, result} ->
         rows = Cache.to_rows(result)
-        # Check if table_name exists in the first column of any row
-        Enum.any?(rows, fn [name | _] -> name == table_name end)
+        length(rows) > 0
 
       {:error, _} ->
         false
@@ -113,7 +122,7 @@ defmodule Modeta.DataLoader do
     Enum.reduce_while(collections, :ok, fn collection, :ok ->
       full_table_name = "#{collection.group}.#{collection.name}"
 
-      if table_exists?(collection.name) do
+      if table_exists?(full_table_name) do
         Logger.debug("Table '#{full_table_name}' already exists, skipping")
         {:cont, :ok}
       else
