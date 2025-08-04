@@ -146,6 +146,8 @@ defmodule Modeta.Collections do
     materialized = Map.get(collection, "materialized", true)
     references = Map.get(collection, "references", [])
     primary_key = Map.get(collection, "primary_key", [])
+    before_create = Map.get(collection, "before_create", [])
+    after_create = Map.get(collection, "after_create", [])
 
     %{
       name: name,
@@ -153,6 +155,8 @@ defmodule Modeta.Collections do
       materialized: materialized,
       references: references,
       primary_key: primary_key,
+      before_create: before_create,
+      after_create: after_create,
       group: group_name,
       table_name: "#{group_name}.#{name}"
     }

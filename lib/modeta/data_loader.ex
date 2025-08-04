@@ -117,7 +117,7 @@ defmodule Modeta.DataLoader do
         Logger.debug("Table '#{full_table_name}' already exists, skipping")
         {:cont, :ok}
       else
-        case create_table_or_view(collection) do
+        case create_table_or_view_with_hooks(collection) do
           :ok ->
             type = if collection.materialized, do: "table", else: "view"
             Logger.info("✓ Created #{type} '#{full_table_name}'")
@@ -129,6 +129,17 @@ defmodule Modeta.DataLoader do
         end
       end
     end)
+  end
+
+  # Create table or view with before/after hooks
+  defp create_table_or_view_with_hooks(collection) do
+    with :ok <- execute_before_create_hooks(collection),
+         :ok <- create_table_or_view(collection),
+         :ok <- execute_after_create_hooks(collection) do
+      :ok
+    else
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # Create table or view based on materialized flag
@@ -379,5 +390,40 @@ defmodule Modeta.DataLoader do
   def load_customers_data do
     Logger.warning("load_customers_data/0 is deprecated. Use initialize/0 instead.")
     initialize()
+  end
+
+  # Execute before_create hooks for a collection
+  defp execute_before_create_hooks(%{before_create: before_create, name: name}) do
+    execute_hook_queries(before_create, "before_create", name)
+  end
+
+  # Execute after_create hooks for a collection
+  defp execute_after_create_hooks(%{after_create: after_create, name: name}) do
+    execute_hook_queries(after_create, "after_create", name)
+  end
+
+  # Execute a list of hook queries
+  defp execute_hook_queries([], _hook_type, _collection_name), do: :ok
+
+  defp execute_hook_queries(queries, hook_type, collection_name) when is_list(queries) do
+    Logger.info("Executing #{hook_type} hooks for collection '#{collection_name}'")
+
+    Enum.reduce_while(queries, :ok, fn query, :ok ->
+      Logger.debug("Executing #{hook_type} query: #{query}")
+
+      case Cache.query(query) do
+        {:ok, _} ->
+          Logger.debug("✓ #{hook_type} query executed successfully")
+          {:cont, :ok}
+
+        {:error, reason} ->
+          Logger.error("✗ #{hook_type} query failed: #{inspect(reason)}")
+          {:halt, {:error, "#{hook_type} hook failed: #{inspect(reason)}"}}
+      end
+    end)
+  end
+
+  defp execute_hook_queries(query, hook_type, collection_name) when is_binary(query) do
+    execute_hook_queries([query], hook_type, collection_name)
   end
 end
