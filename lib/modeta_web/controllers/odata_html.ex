@@ -7,16 +7,19 @@ defmodule ModetaWeb.ODataHTML do
   # Generate metadata XML using string interpolation (HEEx has issues with XML attributes)
   def metadata(%{collection_schemas: collection_schemas}) do
     entity_types =
-      Enum.map_join(collection_schemas, "", fn %{
-                                                 name: name,
-                                                 schema: schema,
-                                                 references: references
-                                               } ->
+      Enum.map_join(collection_schemas, "", fn schema_info ->
+        %{name: name, schema: schema, references: references} = schema_info
+        # Get automatic navigation properties if available
+        auto_nav_props = Map.get(schema_info, :navigation_properties, [])
+
         key_xml = render_key(schema)
         properties_xml = Enum.map_join(schema, "", &render_property/1)
-        navigation_properties_xml = render_navigation_properties(references, collection_schemas)
 
-        ~s(<EntityType Name="#{String.capitalize(name)}">#{key_xml}#{properties_xml}#{navigation_properties_xml}</EntityType>)
+        # Render both manual references and automatic navigation properties
+        manual_nav_xml = render_navigation_properties(references, collection_schemas)
+        auto_nav_xml = render_automatic_navigation_properties(auto_nav_props, collection_schemas)
+
+        ~s(<EntityType Name="#{String.capitalize(name)}">#{key_xml}#{properties_xml}#{manual_nav_xml}#{auto_nav_xml}</EntityType>)
       end)
 
     entity_sets =
@@ -53,6 +56,44 @@ defmodule ModetaWeb.ODataHTML do
     Enum.map_join(references, "", fn reference ->
       render_single_navigation_property(reference, collection_schemas)
     end)
+  end
+
+  # Render automatic navigation properties from relationship discovery
+  defp render_automatic_navigation_properties([], _collection_schemas), do: ""
+
+  defp render_automatic_navigation_properties(nav_props, collection_schemas) do
+    Enum.map_join(nav_props, "", fn nav_prop ->
+      render_automatic_navigation_property(nav_prop, collection_schemas)
+    end)
+  end
+
+  # Render a single automatic navigation property
+  defp render_automatic_navigation_property(
+         %{name: nav_name, target_table: target_table, type: nav_type},
+         collection_schemas
+       ) do
+    # Check if the target collection exists in our schemas
+    target_exists =
+      Enum.any?(collection_schemas, fn schema ->
+        String.downcase(schema.name) == String.downcase(target_table)
+      end)
+
+    if target_exists do
+      target_type = "Default.#{String.capitalize(target_table)}"
+
+      # Determine if this is a collection navigation (has_many) or single navigation (belongs_to)
+      type_attribute =
+        case nav_type do
+          :has_many -> "Type=\"Collection(#{target_type})\""
+          :belongs_to -> "Type=\"#{target_type}\""
+          _ -> "Type=\"#{target_type}\""
+        end
+
+      ~s(<NavigationProperty Name="#{nav_name}" #{type_attribute} Nullable="true"/>)
+    else
+      # Don't create navigation property if target doesn't exist
+      ""
+    end
   end
 
   # Render a single navigation property

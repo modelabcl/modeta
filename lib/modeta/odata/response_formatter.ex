@@ -31,6 +31,7 @@ defmodule Modeta.OData.ResponseFormatter do
     Enum.map(rows, fn row ->
       column_names
       |> Enum.zip(row)
+      |> Enum.map(fn {key, value} -> {key, serialize_duckdb_value(value)} end)
       |> Enum.into(%{})
     end)
   end
@@ -48,6 +49,7 @@ defmodule Modeta.OData.ResponseFormatter do
   def format_single_row_as_object(row, column_names) do
     column_names
     |> Enum.zip(row)
+    |> Enum.map(fn {key, value} -> {key, serialize_duckdb_value(value)} end)
     |> Enum.into(%{})
   end
 
@@ -77,18 +79,15 @@ defmodule Modeta.OData.ResponseFormatter do
           base_entity = format_single_row_as_object(row, column_names)
 
           # Add expanded navigation properties
-          expanded_entity =
-            Enum.reduce(expanded_nav_props, base_entity, fn nav_prop, entity ->
-              case find_reference_for_navigation(collection_config.references, nav_prop) do
-                {:ok, _reference} ->
-                  add_expanded_property_to_entity(entity, nav_prop, row, column_names)
+          Enum.reduce(expanded_nav_props, base_entity, fn nav_prop, entity ->
+            case find_reference_for_navigation(collection_config.references, nav_prop) do
+              {:ok, _reference} ->
+                add_expanded_property_to_entity(entity, nav_prop, row, column_names)
 
-                {:error, :no_reference} ->
-                  entity
-              end
-            end)
-
-          expanded_entity
+              {:error, :no_reference} ->
+                entity
+            end
+          end)
         end)
 
       {:error, :not_found} ->
@@ -211,8 +210,7 @@ defmodule Modeta.OData.ResponseFormatter do
       params
       |> Map.put("$skip", Integer.to_string(next_skip))
       |> Map.put("$top", Integer.to_string(current_top))
-      |> Enum.map(fn {key, value} -> "#{key}=#{URI.encode(value)}" end)
-      |> Enum.join("&")
+      |> Enum.map_join("&", fn {key, value} -> "#{key}=#{URI.encode(value)}" end)
 
     "#{base_url}?#{query_params}"
   end
@@ -313,17 +311,12 @@ defmodule Modeta.OData.ResponseFormatter do
 
   # Add expanded navigation property data to entity
   defp add_expanded_property_to_entity(entity, nav_prop, row, column_names) do
-    # This is a simplified implementation
-    # In a full implementation, we'd need to separate columns by table alias
-    # For now, we'll create a placeholder expanded property
-
     # Find columns that likely belong to the expanded entity
     join_alias = String.downcase(nav_prop)
 
     expanded_columns =
       Enum.filter(column_names, fn col_name ->
-        String.starts_with?(String.downcase(col_name), join_alias <> "_") or
-          String.contains?(String.downcase(col_name), join_alias)
+        String.starts_with?(String.downcase(col_name), join_alias <> "_")
       end)
 
     if length(expanded_columns) > 0 do
@@ -336,7 +329,10 @@ defmodule Modeta.OData.ResponseFormatter do
           if col_index do
             # Remove alias prefix from column name
             clean_col_name = String.replace(col_name, ~r/^#{join_alias}_?/i, "")
-            {clean_col_name, Enum.at(row, col_index)}
+            value = Enum.at(row, col_index)
+            # Apply DuckDB value serialization to expanded data too
+            serialized_value = serialize_duckdb_value(value)
+            {clean_col_name, serialized_value}
           else
             nil
           end
@@ -353,5 +349,41 @@ defmodule Modeta.OData.ResponseFormatter do
     else
       entity
     end
+  end
+
+  # Private helper functions
+
+  # Serializes DuckDB values to JSON-compatible formats.
+  # Handles DuckDB-specific types that aren't natively JSON serializable:
+  # - Date tuples {year, month, day} -> "YYYY-MM-DD"
+  # - Time tuples {hour, minute, second} -> "HH:MM:SS"
+  # - DateTime tuples -> ISO8601 strings
+  # - Other values pass through unchanged
+  defp serialize_duckdb_value({year, month, day})
+       when is_integer(year) and is_integer(month) and is_integer(day) do
+    # Date tuple -> ISO date string
+    "#{year}-#{String.pad_leading(to_string(month), 2, "0")}-#{String.pad_leading(to_string(day), 2, "0")}"
+  end
+
+  defp serialize_duckdb_value({hour, minute, second})
+       when is_integer(hour) and is_integer(minute) and is_integer(second) do
+    # Time tuple -> ISO time string
+    "#{String.pad_leading(to_string(hour), 2, "0")}:#{String.pad_leading(to_string(minute), 2, "0")}:#{String.pad_leading(to_string(second), 2, "0")}"
+  end
+
+  defp serialize_duckdb_value({{year, month, day}, {hour, minute, second}}) do
+    # DateTime tuple -> ISO datetime string
+    date_part =
+      "#{year}-#{String.pad_leading(to_string(month), 2, "0")}-#{String.pad_leading(to_string(day), 2, "0")}"
+
+    time_part =
+      "#{String.pad_leading(to_string(hour), 2, "0")}:#{String.pad_leading(to_string(minute), 2, "0")}:#{String.pad_leading(to_string(second), 2, "0")}"
+
+    "#{date_part}T#{time_part}"
+  end
+
+  defp serialize_duckdb_value(value) do
+    # Pass through other values unchanged
+    value
   end
 end

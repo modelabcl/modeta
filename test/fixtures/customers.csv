@@ -1,11 +1,6 @@
-id,name,email,country,city,age,registration_date
-1,John Doe,john.doe@email.com,USA,New York,32,2023-01-15
-2,Jane Smith,jane.smith@email.com,Canada,Toronto,28,2023-02-20
-3,Carlos Rodriguez,carlos.rodriguez@email.com,Spain,Madrid,45,2023-03-10
-4,Marie Dubois,marie.dubois@email.com,France,Paris,39,2023-04-05
-5,Hans Mueller,hans.mueller@email.com,Germany,Berlin,52,2023-05-12
-6,Yuki Tanaka,yuki.tanaka@email.com,Japan,Tokyo,30,2023-06-18
-7,Sarah Johnson,sarah.johnson@email.com,Australia,Sydney,27,2023-07-22
-8,Alessandro Rossi,alessandro.rossi@email.com,Italy,Rome,41,2023-08-30
-9,Anna Kowalski,anna.kowalski@email.com,Poland,Warsaw,35,2023-09-14
-10,Liu Wei,liu.wei@email.com,China,Beijing,38,2023-10-25
+id,name,email,age,country,registration_date,phone
+1,John Doe,john.doe@email.com,32,USA,2023-01-15,+1-555-1234
+2,Jane Smith,jane.smith@email.com,28,Canada,2023-02-20,+1-555-5678
+3,Carlos Rodriguez,carlos.rodriguez@email.com,45,Spain,2023-03-10,+34-555-9876
+4,Marie Dubois,marie.dubois@email.com,39,France,2023-04-05,+33-555-4321
+5,Hans Mueller,hans.mueller@email.com,52,Germany,2023-05-12,+49-555-8765

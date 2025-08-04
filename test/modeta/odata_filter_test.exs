@@ -232,8 +232,8 @@ defmodule Modeta.ODataFilterTest do
           :ok
 
         other ->
-          # Handle unexpected return format
-          assert other != nil
+          # Handle unexpected return format - just verify it's a tuple
+          assert is_tuple(other)
       end
     end
 
@@ -241,7 +241,8 @@ defmodule Modeta.ODataFilterTest do
       # Test that we can handle the parser's actual return format
       # Use a string value to avoid integer parsing issues
       result = ODataFilterParser.parse_filter("field eq 'test'")
-      assert result != nil
+      # Verify result is a tuple (either {:ok, ...} or {:error, ...})
+      assert is_tuple(result)
       # Don't make strict assertions about format since it's complex
     end
   end

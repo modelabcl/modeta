@@ -33,9 +33,10 @@ defmodule Modeta.DataLoader do
   def create_all_schemas_and_tables do
     collections = Collections.get_all_collections_with_config()
 
-    with :ok <- create_schemas(collections),
-         :ok <- create_tables_and_views(collections) do
-      :ok
+    create_schemas(collections)
+    |> case do
+      :ok -> create_tables_and_views(collections)
+      error -> error
     end
   end
 
@@ -43,12 +44,14 @@ defmodule Modeta.DataLoader do
   Check if a table exists in DuckDB.
   """
   def table_exists?(table_name) do
-    query = "SELECT 1 FROM information_schema.tables WHERE table_name = '#{table_name}'"
+    # Use SHOW TABLES command which works with auto-loaded extensions
+    query = "SHOW TABLES"
 
     case Cache.query(query) do
       {:ok, result} ->
         rows = Cache.to_rows(result)
-        length(rows) > 0
+        # Check if table_name exists in the first column of any row
+        Enum.any?(rows, fn [name | _] -> name == table_name end)
 
       {:error, _} ->
         false
@@ -59,7 +62,8 @@ defmodule Modeta.DataLoader do
   Check if a schema exists in DuckDB.
   """
   def schema_exists?(schema_name) do
-    query = "SELECT 1 FROM information_schema.schemata WHERE schema_name = '#{schema_name}'"
+    # Use DuckDB-specific system function - this one works reliably
+    query = "SELECT 1 FROM duckdb_schemas() WHERE schema_name = '#{schema_name}'"
 
     case Cache.query(query) do
       {:ok, result} ->
@@ -145,16 +149,28 @@ defmodule Modeta.DataLoader do
   end
 
   defp create_materialized_table_with_constraints(%{references: []} = collection) do
-    # Case: primary key only, no foreign keys
-    with {:ok, temp_table} <- create_temp_table_for_schema_inference(collection),
-         {:ok, columns} <- get_table_columns(temp_table),
-         :ok <- drop_temp_table(temp_table),
-         :ok <- create_table_with_explicit_schema(collection, columns, []) do
-      :ok
-    else
+    # Case: primary key only, no foreign keys - use single connection approach
+    case infer_schema_with_single_connection(collection) do
+      {:ok, columns} ->
+        case create_table_with_explicit_schema(collection, columns, []) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warning(
+              "Could not create table with primary key constraints, falling back to simple table creation: #{inspect(reason)}"
+            )
+
+            # Fallback to simple table creation
+            query =
+              "CREATE TABLE IF NOT EXISTS #{collection.table_name} AS (#{collection.origin})"
+
+            execute_creation_query(query)
+        end
+
       {:error, reason} ->
         Logger.warning(
-          "Could not create table with primary key constraints, falling back to simple table creation: #{inspect(reason)}"
+          "Could not infer table schema for primary key constraints, falling back to simple table creation: #{inspect(reason)}"
         )
 
         # Fallback to simple table creation
@@ -165,15 +181,27 @@ defmodule Modeta.DataLoader do
 
   defp create_materialized_table_with_constraints(%{references: references} = collection) do
     # Complex case: need to create table with explicit schema and foreign keys
-    with {:ok, temp_table} <- create_temp_table_for_schema_inference(collection),
-         {:ok, columns} <- get_table_columns(temp_table),
-         :ok <- drop_temp_table(temp_table),
-         :ok <- create_table_with_explicit_schema(collection, columns, references) do
-      :ok
-    else
+    case infer_schema_with_single_connection(collection) do
+      {:ok, columns} ->
+        case create_table_with_explicit_schema(collection, columns, references) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warning(
+              "Could not create table with explicit schema, falling back to simple table creation: #{inspect(reason)}"
+            )
+
+            # Fallback to simple table creation
+            query =
+              "CREATE TABLE IF NOT EXISTS #{collection.table_name} AS (#{collection.origin})"
+
+            execute_creation_query(query)
+        end
+
       {:error, reason} ->
         Logger.warning(
-          "Could not create table with foreign key constraints, falling back to simple table creation: #{inspect(reason)}"
+          "Could not infer table schema, falling back to simple table creation: #{inspect(reason)}"
         )
 
         # Fallback to simple table creation
@@ -182,54 +210,44 @@ defmodule Modeta.DataLoader do
     end
   end
 
-  # Create temporary table to infer schema
-  defp create_temp_table_for_schema_inference(%{table_name: table_name, origin: origin}) do
-    temp_table = "temp_schema_#{table_name |> String.replace(".", "_")}_#{:rand.uniform(10000)}"
-    query = "CREATE TEMP TABLE #{temp_table} AS (#{origin})"
+  # Infer schema using a single DuckDB connection to avoid temp table visibility issues
+  defp infer_schema_with_single_connection(%{table_name: table_name, origin: origin}) do
+    # Get database reference from Cache GenServer
+    case GenServer.call(Cache, :get_database) do
+      {:ok, ddb} ->
+        case Duckdbex.connection(ddb) do
+          {:ok, conn} ->
+            temp_table =
+              "temp_schema_#{table_name |> String.replace(".", "_")}_#{:rand.uniform(10000)}"
 
-    case Cache.query(query) do
-      {:ok, _} -> {:ok, temp_table}
-      {:error, reason} -> {:error, reason}
-    end
-  end
+            with {:ok, _} <-
+                   Duckdbex.query(conn, "CREATE TEMP TABLE #{temp_table} AS (#{origin})"),
+                 {:ok, describe_result} <- Duckdbex.query(conn, "DESCRIBE #{temp_table}"),
+                 describe_data <- Duckdbex.fetch_all(describe_result),
+                 {:ok, _} <- Duckdbex.query(conn, "DROP TABLE #{temp_table}") do
+              columns =
+                Enum.map(describe_data, fn row ->
+                  case row do
+                    [name, type | _] when is_binary(name) and is_binary(type) ->
+                      %{name: name, type: type}
 
-  # Get column information from temporary table
-  defp get_table_columns(temp_table) do
-    query = "DESCRIBE #{temp_table}"
+                    _ ->
+                      Logger.warning("Unexpected DESCRIBE row format: #{inspect(row)}")
+                      %{name: "unknown", type: "VARCHAR"}
+                  end
+                end)
 
-    case Cache.query(query) do
-      {:ok, result} ->
-        rows = Cache.to_rows(result)
-
-        columns =
-          Enum.map(rows, fn row ->
-            # DESCRIBE returns a list where each row is a list of values
-            # DuckDB DESCRIBE format: [column_name, column_type, null, key, default, extra]
-            case row do
-              [name, type | _] when is_binary(name) and is_binary(type) ->
-                %{name: name, type: type}
-
-              _ ->
-                Logger.warning("Unexpected DESCRIBE row format: #{inspect(row)}")
-                %{name: "unknown", type: "VARCHAR"}
+              {:ok, columns}
+            else
+              error -> error
             end
-          end)
 
-        {:ok, columns}
+          error ->
+            error
+        end
 
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  # Drop temporary table
-  defp drop_temp_table(temp_table) do
-    query = "DROP TABLE #{temp_table}"
-
-    case Cache.query(query) do
-      {:ok, _} -> :ok
-      # Ignore errors when dropping temp tables
-      {:error, _} -> :ok
+      error ->
+        error
     end
   end
 

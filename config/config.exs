@@ -40,9 +40,6 @@ config :mime, :types, %{
   "application/atomsvc+xml" => ["atomsvc"]
 }
 
-# Configure ADBC drivers
-config :adbc, :drivers, [:duckdb]
-
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

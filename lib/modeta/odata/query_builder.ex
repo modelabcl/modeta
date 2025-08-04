@@ -205,6 +205,8 @@ defmodule Modeta.OData.QueryBuilder do
           )
 
         {:error, :no_reference} ->
+          require Logger
+          Logger.warning("No reference found for navigation property: #{nav_prop}")
           # Skip unknown navigation properties
           query
       end
@@ -235,7 +237,13 @@ defmodule Modeta.OData.QueryBuilder do
 
       {:error, :no_reference} ->
         # Try automatic discovery from DuckDB
-        find_automatic_navigation_reference(group_name, collection_config.table_name, nav_prop)
+        # Extract unqualified table name (remove schema prefix)
+        unqualified_table_name =
+          collection_config.table_name
+          |> String.split(".")
+          |> List.last()
+
+        find_automatic_navigation_reference(group_name, unqualified_table_name, nav_prop)
     end
   end
 
@@ -260,6 +268,9 @@ defmodule Modeta.OData.QueryBuilder do
             reference = convert_discovered_to_reference_format(prop)
             {:ok, reference}
         end
+
+      _error ->
+        {:error, :discovery_failed}
     end
   end
 
@@ -274,12 +285,15 @@ defmodule Modeta.OData.QueryBuilder do
         }
 
       :has_many ->
-        # For has_many: reverse the relationship - target table has foreign key pointing to source
+        # For has_many: current table's primary key joins to target table's foreign key
+        # customers.id → purchases.customer_id becomes: purchases(customer_id) references customers.id
         %{
-          # Column on current table
+          # The column on the current table (usually primary key)
           "col" => nav_prop.source_column,
-          # Target table and its foreign key
-          "ref" => "#{nav_prop.target_table}(#{nav_prop.target_column})"
+          # Target table with its foreign key column that references this table
+          "ref" => "#{nav_prop.target_table}(#{nav_prop.target_column})",
+          # Mark this as reverse join for proper JOIN logic
+          "_reverse_join" => true
         }
     end
   end
@@ -354,7 +368,8 @@ defmodule Modeta.OData.QueryBuilder do
          group_name,
          _source_table
        ) do
-    %{"col" => foreign_key_column, "ref" => ref_spec} = reference
+    %{"col" => source_column, "ref" => ref_spec} = reference
+    is_reverse_join = Map.get(reference, "_reverse_join", false)
 
     case parse_reference_spec(ref_spec) do
       {:ok, {ref_table, ref_column}} ->
@@ -373,6 +388,16 @@ defmodule Modeta.OData.QueryBuilder do
         # This ensures all primary entities are returned even if navigation property is null
         join_sql = "LEFT JOIN"
 
+        # Determine JOIN condition based on relationship direction
+        {left_join_expr, right_join_expr} =
+          if is_reverse_join do
+            # For has_many: main.id = target.foreign_key (e.g., customers.id = purchases.customer_id)
+            {"main.#{source_column}", "#{join_alias}.#{ref_column}"}
+          else
+            # For belongs_to: main.foreign_key = target.id (e.g., purchases.customer_id = customers.id)
+            {"main.#{source_column}", "#{join_alias}.#{ref_column}"}
+          end
+
         # Get target table columns for proper aliasing
         case get_table_columns_for_expand(qualified_ref_table, join_alias) do
           {:ok, aliased_columns} ->
@@ -381,7 +406,7 @@ defmodule Modeta.OData.QueryBuilder do
             SELECT main.*, #{aliased_columns}
             FROM (#{base_query}) AS main
             #{join_sql} #{qualified_ref_table} AS #{join_alias}
-            ON main.#{foreign_key_column} = #{join_alias}.#{ref_column}
+            ON #{left_join_expr} = #{right_join_expr}
             """
 
           {:error, _} ->
@@ -390,7 +415,7 @@ defmodule Modeta.OData.QueryBuilder do
             SELECT main.*, #{join_alias}.*
             FROM (#{base_query}) AS main
             #{join_sql} #{qualified_ref_table} AS #{join_alias}
-            ON main.#{foreign_key_column} = #{join_alias}.#{ref_column}
+            ON #{left_join_expr} = #{right_join_expr}
             """
         end
 

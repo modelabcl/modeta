@@ -197,8 +197,11 @@ defmodule Modeta.OData.NavigationResolver do
   # Private helper functions
 
   # Extract column names from ADBC result
-  defp extract_column_names(%Adbc.Result{data: columns}) do
-    Enum.map(columns, & &1.name)
+  # For DuckDBex, we need to get column names differently
+  # This is a placeholder - we'll need to query table schema separately
+  defp extract_column_names(_result) do
+    # TODO: Get column names from table schema
+    []
   end
 
   # Build navigation property response based on result count

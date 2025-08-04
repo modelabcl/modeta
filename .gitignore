@@ -27,3 +27,5 @@ modeta-*.tar
 
 # Js odata server used as reference
 /odata-v4-server/
+
+/data/

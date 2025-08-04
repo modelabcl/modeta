@@ -41,7 +41,7 @@ defmodule Modeta.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
-      {:adbc, "~> 0.7.9"},
+      {:duckdbex, "~> 0.3"},
       {:yaml_elixir, "~> 2.9"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_view, "~> 1.1.0-rc.0"},

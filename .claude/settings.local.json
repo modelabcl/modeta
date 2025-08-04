@@ -13,7 +13,8 @@
       "Bash(mix credo:*)",
       "Bash(git add:*)",
       "Bash(grep:*)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(duckdb:*)"
     ],
     "deny": []
   }

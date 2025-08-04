@@ -151,7 +151,20 @@ defmodule ModetaWeb.ODataController do
         case Cache.query(final_query) do
           {:ok, result} ->
             rows = Cache.to_rows(result)
-            column_names = get_column_names(result)
+            # If there's an expand parameter, we need to get the expected column names 
+            # including the expanded columns based on the SQL query that was built
+            column_names =
+              if expand_param do
+                # Build expected column names including expanded columns
+                build_expanded_column_names(
+                  group_name,
+                  collection_name,
+                  expand_param,
+                  select_param
+                )
+              else
+                get_effective_column_names(group_name, collection_name, select_param)
+              end
 
             # Get total count if requested
             total_count =
@@ -252,7 +265,19 @@ defmodule ModetaWeb.ODataController do
         case Cache.query(final_query) do
           {:ok, result} ->
             rows = Cache.to_rows(result)
-            column_names = get_column_names(result)
+            # Use same expanded column names logic as collection handler
+            column_names =
+              if expand_param do
+                # Build expected column names including expanded columns
+                build_expanded_column_names(
+                  group_name,
+                  collection_name,
+                  expand_param,
+                  select_param
+                )
+              else
+                get_effective_column_names(group_name, collection_name, select_param)
+              end
 
             case rows do
               [single_row] ->
@@ -323,9 +348,125 @@ defmodule ModetaWeb.ODataController do
     end
   end
 
-  # Extract column names from ADBC result
-  defp get_column_names(%Adbc.Result{data: columns}) do
-    Enum.map(columns, & &1.name)
+  # Get column names for a collection by querying its schema
+  defp get_column_names_for_collection(group_name, collection_name) do
+    case Collections.get_collection(group_name, collection_name) do
+      {:ok, _collection_config} ->
+        case get_table_schema_for_group(group_name, collection_name) do
+          {:ok, schema} ->
+            Enum.map(schema, & &1.name)
+
+          {:error, _} ->
+            []
+        end
+
+      {:error, _} ->
+        []
+    end
+  end
+
+  # Get column names in the order they appear in the query result
+  # If $select is used, return columns in the select order
+  # Otherwise, return all columns in schema order
+  defp get_effective_column_names(group_name, collection_name, select_param) do
+    if select_param && String.trim(select_param) != "" do
+      # Parse select parameter and return columns in that order
+      select_param
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+    else
+      # No select param, return all columns in schema order
+      get_column_names_for_collection(group_name, collection_name)
+    end
+  end
+
+  # Build column names list for queries with expanded navigation properties
+  defp build_expanded_column_names(group_name, collection_name, expand_param, select_param) do
+    # Start with base table columns
+    base_columns =
+      if select_param && String.trim(select_param) != "" do
+        # Parse select parameter and return columns in that order
+        select_param
+        |> String.split(",")
+        |> Enum.map(&String.trim/1)
+        |> Enum.reject(&(&1 == ""))
+      else
+        # Get all base table columns
+        get_column_names_for_collection(group_name, collection_name)
+      end
+
+    # Add expanded columns for each navigation property
+    expanded_nav_props = String.split(expand_param, ",") |> Enum.map(&String.trim/1)
+
+    expanded_columns =
+      Enum.flat_map(expanded_nav_props, fn nav_prop ->
+        # Get the target table for this navigation property
+        case Collections.get_collection(group_name, collection_name) do
+          {:ok, collection_config} ->
+            case find_reference_for_navigation_table(collection_config.references, nav_prop) do
+              {:ok, target_table} ->
+                # Get columns for the target table and add alias prefix
+                join_alias = String.downcase(nav_prop)
+
+                case get_column_names_for_collection(group_name, target_table) do
+                  columns when is_list(columns) ->
+                    Enum.map(columns, fn col -> "#{join_alias}_#{col}" end)
+
+                  _ ->
+                    []
+                end
+
+              {:error, _} ->
+                []
+            end
+
+          {:error, _} ->
+            []
+        end
+      end)
+
+    # Combine base and expanded columns
+    base_columns ++ expanded_columns
+  end
+
+  # Find the target table name for a navigation property
+  defp find_reference_for_navigation_table(references, nav_prop) do
+    target_ref =
+      Enum.find(references, fn %{"ref" => ref_spec} ->
+        case parse_reference_spec(ref_spec) do
+          {:ok, {ref_table, _}} ->
+            # Strip schema prefix and compare with navigation property (case insensitive)
+            table_name = ref_table |> String.split(".") |> List.last()
+            String.downcase(String.capitalize(table_name)) == String.downcase(nav_prop)
+
+          _ ->
+            false
+        end
+      end)
+
+    case target_ref do
+      nil ->
+        {:error, :no_reference}
+
+      %{"ref" => ref_spec} ->
+        case parse_reference_spec(ref_spec) do
+          {:ok, {ref_table, _}} ->
+            table_name = ref_table |> String.split(".") |> List.last()
+            {:ok, table_name}
+
+          error ->
+            error
+        end
+    end
+  end
+
+  # Parse reference specification like "customers(id)" or "sales_test.customers(id)" 
+  defp parse_reference_spec(ref_spec) do
+    case Regex.run(~r/^([a-zA-Z_][a-zA-Z0-9_.]*)\(([a-zA-Z_][a-zA-Z0-9_]*)\)$/, ref_spec) do
+      [_, table, column] -> {:ok, {table, column}}
+      nil -> {:error, "Invalid format. Expected 'table(column)' or 'schema.table(column)'"}
+    end
   end
 
   # Get schema information for collections in a specific group
@@ -337,10 +478,17 @@ defmodule ModetaWeb.ODataController do
 
       case get_table_schema_for_group(group_name, collection_name) do
         {:ok, schema} ->
+          # Get manual references from configuration
+          manual_references = (collection_config && collection_config.references) || []
+
+          # Get automatic navigation properties from relationship discovery
+          automatic_nav_props = get_automatic_navigation_properties(group_name, collection_name)
+
           %{
             name: collection_name,
             schema: schema,
-            references: (collection_config && collection_config.references) || []
+            references: manual_references,
+            navigation_properties: automatic_nav_props
           }
 
         {:error, _reason} ->
@@ -348,10 +496,32 @@ defmodule ModetaWeb.ODataController do
           %{
             name: collection_name,
             schema: [%{name: "Id", type: "VARCHAR"}, %{name: "Name", type: "VARCHAR"}],
-            references: (collection_config && collection_config.references) || []
+            references: (collection_config && collection_config.references) || [],
+            navigation_properties: []
           }
       end
     end)
+  end
+
+  # Get automatic navigation properties using relationship discovery
+  defp get_automatic_navigation_properties(group_name, collection_name) do
+    alias Modeta.RelationshipDiscovery
+
+    case RelationshipDiscovery.get_navigation_properties(group_name, collection_name) do
+      {:ok, nav_props} ->
+        # Convert to format compatible with metadata generation
+        (nav_props.belongs_to ++ nav_props.has_many)
+        |> Enum.map(fn prop ->
+          %{
+            name: prop.name,
+            target_table: prop.target_table,
+            type: prop.type
+          }
+        end)
+
+      _error ->
+        []
+    end
   end
 
   # Get DuckDB table schema for a collection in a specific group
@@ -372,24 +542,22 @@ defmodule ModetaWeb.ODataController do
   end
 
   # Extract schema information from DESCRIBE result
-  defp extract_schema_from_describe(%Adbc.Result{data: columns}) do
-    rows = Cache.to_rows(%Adbc.Result{data: columns})
-    column_names = Enum.map(columns, & &1.name)
+  defp extract_schema_from_describe(result) do
+    rows = Cache.to_rows(result)
 
     # DESCRIBE typically returns: column_name, column_type, null, key, default, extra
-    name_index = Enum.find_index(column_names, &(&1 == "column_name"))
-    type_index = Enum.find_index(column_names, &(&1 == "column_type"))
+    # For DuckDBex, we assume the first two columns are name and type
+    Enum.map(rows, fn row ->
+      case row do
+        [name, type | _] ->
+          %{
+            name: name,
+            type: type
+          }
 
-    if name_index && type_index do
-      Enum.map(rows, fn row ->
-        %{
-          name: Enum.at(row, name_index),
-          type: Enum.at(row, type_index)
-        }
-      end)
-    else
-      # Fallback if DESCRIBE format is different
-      []
-    end
+        _ ->
+          %{name: "unknown", type: "unknown"}
+      end
+    end)
   end
 end

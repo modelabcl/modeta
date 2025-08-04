@@ -115,7 +115,10 @@ defmodule Modeta.OData.ParameterParser do
         {:ok, nil}
 
       top_str when is_binary(top_str) ->
-        case Integer.parse(top_str) do
+        # Handle underscore format like "10_000" by removing underscores
+        clean_str = String.replace(top_str, "_", "")
+
+        case Integer.parse(clean_str) do
           {num, ""} when num > 0 and num <= max_page_size ->
             {:ok, num}
 
@@ -357,7 +360,7 @@ defmodule Modeta.OData.ParameterParser do
   - true if it's an OData system query parameter
   - false otherwise
   """
-  def is_odata_param?(param_name) do
+  def odata_param?(param_name) do
     param_name in [
       "$filter",
       "$select",

@@ -2,7 +2,7 @@ collections:
   sales_test:
     - name: customers
       materialized: true
-      origin: "select * from read_csv('test/fixtures/customers.csv')"
+      origin: "select * from read_json_auto('test/fixtures/customers.jsonl')"
       primary_key:
         - id
     - name: purchases

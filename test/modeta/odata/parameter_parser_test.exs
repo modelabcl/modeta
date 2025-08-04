@@ -100,8 +100,8 @@ defmodule Modeta.OData.ParameterParserTest do
 
     test "enforces maximum page size" do
       # Assuming max_page_size is 5000
-      assert ParameterParser.validate_top_param("10000") == {:ok, 5000}
-      assert ParameterParser.validate_top_param(10000) == {:ok, 5000}
+      assert ParameterParser.validate_top_param("10_000") == {:ok, 5000}
+      assert ParameterParser.validate_top_param(10_000) == {:ok, 5000}
     end
 
     test "rejects zero and negative values" do
@@ -372,29 +372,29 @@ defmodule Modeta.OData.ParameterParserTest do
     end
   end
 
-  describe "is_odata_param?/1" do
+  describe "odata_param?/1" do
     test "identifies OData system query parameters" do
-      assert ParameterParser.is_odata_param?("$filter") == true
-      assert ParameterParser.is_odata_param?("$select") == true
-      assert ParameterParser.is_odata_param?("$expand") == true
-      assert ParameterParser.is_odata_param?("$orderby") == true
-      assert ParameterParser.is_odata_param?("$top") == true
-      assert ParameterParser.is_odata_param?("$skip") == true
-      assert ParameterParser.is_odata_param?("$count") == true
-      assert ParameterParser.is_odata_param?("$search") == true
-      assert ParameterParser.is_odata_param?("$apply") == true
+      assert ParameterParser.odata_param?("$filter") == true
+      assert ParameterParser.odata_param?("$select") == true
+      assert ParameterParser.odata_param?("$expand") == true
+      assert ParameterParser.odata_param?("$orderby") == true
+      assert ParameterParser.odata_param?("$top") == true
+      assert ParameterParser.odata_param?("$skip") == true
+      assert ParameterParser.odata_param?("$count") == true
+      assert ParameterParser.odata_param?("$search") == true
+      assert ParameterParser.odata_param?("$apply") == true
     end
 
     test "rejects non-OData parameters" do
-      assert ParameterParser.is_odata_param?("filter") == false
-      assert ParameterParser.is_odata_param?("page") == false
-      assert ParameterParser.is_odata_param?("limit") == false
-      assert ParameterParser.is_odata_param?("$custom") == false
-      assert ParameterParser.is_odata_param?("") == false
+      assert ParameterParser.odata_param?("filter") == false
+      assert ParameterParser.odata_param?("page") == false
+      assert ParameterParser.odata_param?("limit") == false
+      assert ParameterParser.odata_param?("$custom") == false
+      assert ParameterParser.odata_param?("") == false
     end
 
     test "handles nil input" do
-      assert ParameterParser.is_odata_param?(nil) == false
+      assert ParameterParser.odata_param?(nil) == false
     end
   end
 
