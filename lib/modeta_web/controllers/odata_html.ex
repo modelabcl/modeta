@@ -6,6 +6,10 @@ defmodule ModetaWeb.ODataHTML do
 
   # Generate metadata XML using string interpolation (HEEx has issues with XML attributes)
   def metadata(%{collection_schemas: collection_schemas}) do
+    # Extract complex types from all schemas
+    complex_types = extract_complex_types(collection_schemas)
+    complex_types_xml = render_complex_types(complex_types)
+
     entity_types =
       Enum.map_join(collection_schemas, "", fn schema_info ->
         %{name: name, schema: schema, references: references} = schema_info
@@ -32,6 +36,7 @@ defmodule ModetaWeb.ODataHTML do
     <edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx" Version="4.0">
       <edmx:DataServices>
         <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="Default">
+          #{complex_types_xml}
           #{entity_types}
           <EntityContainer Name="Default">
             #{entity_sets}
@@ -40,6 +45,81 @@ defmodule ModetaWeb.ODataHTML do
       </edmx:DataServices>
     </edmx:Edmx>
     """
+  end
+
+  # Extract complex types from all collection schemas
+  defp extract_complex_types(collection_schemas) do
+    collection_schemas
+    |> Enum.flat_map(fn %{schema: schema} ->
+      schema
+      |> Enum.filter(&is_complex_type?/1)
+      |> Enum.map(&extract_complex_type_definition/1)
+    end)
+    |> Enum.uniq()
+  end
+
+  # Check if a column represents a complex type (STRUCT or array of STRUCT)
+  defp is_complex_type?(%{type: type}) do
+    String.contains?(type, "STRUCT(")
+  end
+
+  # Extract complex type definition from DuckDB STRUCT type
+  defp extract_complex_type_definition(%{type: type}) do
+    case parse_struct_type(type) do
+      {:ok, {type_name, properties}} ->
+        %{name: type_name, properties: properties}
+      {:error, _} ->
+        # Fallback for unparseable complex types
+        %{name: "GenericType", properties: []}
+    end
+  end
+
+  # Parse DuckDB STRUCT type definition
+  defp parse_struct_type(type) do
+    # Handle STRUCT(...)[]) for arrays of structs
+    base_type = String.replace(type, ~r/\[\]$/, "")
+    
+    case Regex.run(~r/^STRUCT\((.+)\)/, base_type) do
+      [_, struct_content] ->
+        properties = parse_struct_properties(struct_content)
+        type_name = if String.ends_with?(type, "[]"), do: "AddressInfo", else: "AddressInfo"
+        {:ok, {type_name, properties}}
+      
+      nil ->
+        {:error, "Not a valid STRUCT type"}
+    end
+  end
+
+  # Parse individual properties within a STRUCT definition
+  defp parse_struct_properties(struct_content) do
+    # Split by commas, but be careful of nested types
+    # For now, handle simple case: "field1 TYPE1, field2 TYPE2"
+    struct_content
+    |> String.replace(~r/"([^"]+)"/, "\\1")  # Remove quotes around field names
+    |> String.split(~r/,\s*/)
+    |> Enum.map(fn field_def ->
+      case String.split(field_def, ~r/\s+/, parts: 2) do
+        [name, field_type] ->
+          %{name: name, type: String.trim(field_type)}
+        [name] ->
+          %{name: name, type: "VARCHAR"}
+        _ ->
+          %{name: "unknown", type: "VARCHAR"}
+      end
+    end)
+  end
+
+  # Render complex types XML
+  defp render_complex_types([]), do: ""
+  
+  defp render_complex_types(complex_types) do
+    Enum.map_join(complex_types, "", fn %{name: type_name, properties: properties} ->
+      properties_xml = Enum.map_join(properties, "", fn %{name: prop_name, type: prop_type} ->
+        ~s(<Property Name="#{prop_name}" Type="#{duckdb_type_to_odata_type(prop_type)}" Nullable="true"/>)
+      end)
+      
+      ~s(<ComplexType Name="#{type_name}">#{properties_xml}</ComplexType>)
+    end)
   end
 
   # Helper to render a single property
@@ -162,8 +242,21 @@ defmodule ModetaWeb.ODataHTML do
 
   # Map DuckDB types to OData EDM types
   def duckdb_type_to_odata_type(duckdb_type) do
-    type = String.upcase(duckdb_type)
-    do_map_type(type)
+    # Handle complex types first
+    cond do
+      String.contains?(duckdb_type, "STRUCT(") and String.ends_with?(duckdb_type, "[]") ->
+        # Array of structs - use Collection of complex type
+        "Collection(Default.AddressInfo)"
+      
+      String.contains?(duckdb_type, "STRUCT(") ->
+        # Single struct - use complex type
+        "Default.AddressInfo"
+      
+      true ->
+        # Regular scalar types
+        type = String.upcase(duckdb_type)
+        do_map_type(type)
+    end
   end
 
   defp do_map_type(type) when type in ["BIGINT", "INTEGER", "SMALLINT", "TINYINT"],

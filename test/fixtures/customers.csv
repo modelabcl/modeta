@@ -1,6 +1,6 @@
-id,name,email,age,country,registration_date,phone
-1,John Doe,john.doe@email.com,32,USA,2023-01-15,+1-555-1234
-2,Jane Smith,jane.smith@email.com,28,Canada,2023-02-20,+1-555-5678
-3,Carlos Rodriguez,carlos.rodriguez@email.com,45,Spain,2023-03-10,+34-555-9876
-4,Marie Dubois,marie.dubois@email.com,39,France,2023-04-05,+33-555-4321
-5,Hans Mueller,hans.mueller@email.com,52,Germany,2023-05-12,+49-555-8765
+id,name,email,age,country
+1,John Doe,john.doe@email.com,32,USA
+2,Jane Smith,jane.smith@email.com,28,Canada
+3,Bob Johnson,bob.johnson@email.com,45,USA
+4,Alice Williams,alice.williams@email.com,35,UK
+5,Charlie Brown,charlie.brown@email.com,29,Australia
