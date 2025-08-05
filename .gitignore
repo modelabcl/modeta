@@ -29,3 +29,5 @@ modeta-*.tar
 /odata-v4-server/
 
 /data/
+
+/collections.yml

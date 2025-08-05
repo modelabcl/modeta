@@ -9,7 +9,7 @@ import Config
 
 config :modeta,
   generators: [timestamp_type: :utc_datetime],
-  collections_file: "config/collections.yml",
+  collections_file: "/collections.yml",
   # OData pagination settings
   default_page_size: 1000,
   max_page_size: 5000,

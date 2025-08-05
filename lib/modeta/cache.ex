@@ -26,7 +26,7 @@ defmodule Modeta.Cache do
 
     start_time = System.monotonic_time(:millisecond)
 
-    result = GenServer.call(__MODULE__, {:query, sql}, 30_000)
+    result = GenServer.call(__MODULE__, {:query, sql}, 300_000)
 
     end_time = System.monotonic_time(:millisecond)
     duration = end_time - start_time
