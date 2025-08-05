@@ -187,7 +187,8 @@ defmodule Modeta.OData.QueryBuilder do
       end
 
     # Apply LIMIT and OFFSET to query
-    "SELECT * FROM (#{base_query}) AS paginated_data LIMIT #{top} OFFSET #{skip}"
+    # Use LIMIT + 1 to detect if more data exists for pagination
+    "SELECT * FROM (#{base_query}) AS paginated_data LIMIT #{top + 1} OFFSET #{skip}"
   end
 
   # Build LEFT JOIN clauses for expanded navigation properties

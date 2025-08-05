@@ -166,14 +166,24 @@ defmodule Modeta.OData.ResponseFormatter do
           default_page_size
       end
 
-    # Base response
+    # Handle LIMIT + 1 pagination detection
+    {actual_rows, has_more_results} =
+      if length(rows) > current_top do
+        # We got more rows than requested, so there are more results
+        {Enum.take(rows, current_top), true}
+      else
+        # We got the exact number or fewer rows, so no more results
+        {rows, false}
+      end
+
+    # Base response with actual rows (not including the extra detection row)
     base_response = %{
       "@odata.context" => context_url,
-      "value" => rows
+      "value" => actual_rows
     }
 
-    # If we got exactly the page size, there might be more results
-    if length(rows) == current_top do
+    # Only include @odata.nextLink if we actually detected more results
+    if has_more_results do
       # Build next page URL
       next_skip = current_skip + current_top
 
@@ -182,7 +192,7 @@ defmodule Modeta.OData.ResponseFormatter do
 
       Map.put(base_response, "@odata.nextLink", next_link)
     else
-      # No more results, return base response
+      # No more results, return base response without nextLink
       base_response
     end
   end
@@ -386,5 +396,4 @@ defmodule Modeta.OData.ResponseFormatter do
     # Pass through other values unchanged
     value
   end
-
 end

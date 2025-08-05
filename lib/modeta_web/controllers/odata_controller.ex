@@ -151,7 +151,7 @@ defmodule ModetaWeb.ODataController do
         case Cache.query(final_query) do
           {:ok, result} ->
             rows = Cache.to_rows(result)
-            # If there's an expand parameter, we need to get the expected column names 
+            # If there's an expand parameter, we need to get the expected column names
             # including the expanded columns based on the SQL query that was built
             column_names =
               if expand_param do
@@ -449,7 +449,7 @@ defmodule ModetaWeb.ODataController do
     end
   end
 
-  # Parse reference specification like "customers(id)" or "sales_test.customers(id)" 
+  # Parse reference specification like "customers(id)" or "sales_test.customers(id)"
   defp parse_reference_spec(ref_spec) do
     case Regex.run(~r/^([a-zA-Z_][a-zA-Z0-9_.]*)\(([a-zA-Z_][a-zA-Z0-9_]*)\)$/, ref_spec) do
       [_, table, column] -> {:ok, {table, column}}

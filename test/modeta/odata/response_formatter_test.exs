@@ -324,8 +324,8 @@ defmodule Modeta.OData.ResponseFormatterTest do
     end
 
     test "includes @odata.nextLink when page is full", %{conn: conn, context_url: context_url} do
-      # Create exactly 5 rows (same as page size to indicate potentially more data)
-      rows = Enum.map(1..5, fn i -> %{"id" => i, "name" => "User #{i}"} end)
+      # Create 6 rows (LIMIT + 1 detection: more than requested page size of 5)
+      rows = Enum.map(1..6, fn i -> %{"id" => i, "name" => "User #{i}"} end)
       params = %{"$filter" => "active eq true"}
 
       result =
@@ -374,8 +374,8 @@ defmodule Modeta.OData.ResponseFormatterTest do
     end
 
     test "handles custom skip and top parameters", %{conn: conn, context_url: context_url} do
-      # Create exactly 10 rows (same as page size to indicate potentially more data)
-      rows = Enum.map(1..10, fn i -> %{"id" => i, "name" => "User #{i}"} end)
+      # Create 11 rows (LIMIT + 1 detection: more than requested page size of 10)
+      rows = Enum.map(1..11, fn i -> %{"id" => i, "name" => "User #{i}"} end)
 
       result =
         ResponseFormatter.build_paginated_response(
@@ -400,8 +400,8 @@ defmodule Modeta.OData.ResponseFormatterTest do
     end
 
     test "enforces maximum page size limit", %{conn: conn, context_url: context_url} do
-      # Request 10000 records (above max of 5000), create exactly 5000 rows
-      rows = Enum.map(1..5000, fn i -> %{"id" => i, "name" => "User #{i}"} end)
+      # Request 10000 records (above max of 5000), create 5001 rows (LIMIT + 1 detection)
+      rows = Enum.map(1..5001, fn i -> %{"id" => i, "name" => "User #{i}"} end)
 
       result =
         ResponseFormatter.build_paginated_response(
@@ -415,8 +415,8 @@ defmodule Modeta.OData.ResponseFormatterTest do
           "10000"
         )
 
-      # Should return all 5000 rows (max page size limit)
-      expected_rows = rows
+      # Should return first 5000 rows (max page size limit)
+      expected_rows = Enum.take(rows, 5000)
       assert result["value"] == expected_rows
       assert Map.has_key?(result, "@odata.nextLink")
 
@@ -458,8 +458,8 @@ defmodule Modeta.OData.ResponseFormatterTest do
     end
 
     test "handles invalid top values", %{conn: conn, context_url: context_url} do
-      # Create exactly 1000 rows (default page size)
-      rows = Enum.map(1..1000, fn i -> %{"id" => i, "name" => "User #{i}"} end)
+      # Create 1001 rows (LIMIT + 1 detection: more than default page size of 1000)
+      rows = Enum.map(1..1001, fn i -> %{"id" => i, "name" => "User #{i}"} end)
 
       result1 =
         ResponseFormatter.build_paginated_response(
@@ -494,8 +494,8 @@ defmodule Modeta.OData.ResponseFormatterTest do
     end
 
     test "handles integer parameters", %{conn: conn, context_url: context_url} do
-      # Create exactly 15 rows
-      rows = Enum.map(1..15, fn i -> %{"id" => i, "name" => "User #{i}"} end)
+      # Create 16 rows (LIMIT + 1 detection: more than requested page size of 15)
+      rows = Enum.map(1..16, fn i -> %{"id" => i, "name" => "User #{i}"} end)
 
       result =
         ResponseFormatter.build_paginated_response(
@@ -509,8 +509,8 @@ defmodule Modeta.OData.ResponseFormatterTest do
           15
         )
 
-      # Should return all 15 rows (since we requested top=15)
-      expected_rows = rows
+      # Should return first 15 rows (since we requested top=15)
+      expected_rows = Enum.take(rows, 15)
       assert result["value"] == expected_rows
       assert Map.has_key?(result, "@odata.nextLink")
 

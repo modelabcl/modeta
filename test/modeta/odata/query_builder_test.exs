@@ -21,7 +21,7 @@ defmodule Modeta.OData.QueryBuilderTest do
           nil
         )
 
-      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1000 OFFSET 0"
+      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1001 OFFSET 0"
       assert result == expected
     end
 
@@ -41,7 +41,7 @@ defmodule Modeta.OData.QueryBuilderTest do
           nil
         )
 
-      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1000 OFFSET 0"
+      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1001 OFFSET 0"
       assert result == expected
     end
   end
@@ -209,8 +209,8 @@ defmodule Modeta.OData.QueryBuilderTest do
 
       result = QueryBuilder.apply_pagination_to_query(base_query, nil, nil)
 
-      # Should use default page size (1000) and skip 0
-      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1000 OFFSET 0"
+      # Should use default page size (1000) and skip 0, +1 for detection
+      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1001 OFFSET 0"
       assert result == expected
     end
 
@@ -219,7 +219,7 @@ defmodule Modeta.OData.QueryBuilderTest do
 
       result = QueryBuilder.apply_pagination_to_query(base_query, nil, "50")
 
-      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 50 OFFSET 0"
+      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 51 OFFSET 0"
       assert result == expected
     end
 
@@ -228,7 +228,7 @@ defmodule Modeta.OData.QueryBuilderTest do
 
       result = QueryBuilder.apply_pagination_to_query(base_query, "100", nil)
 
-      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1000 OFFSET 100"
+      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1001 OFFSET 100"
       assert result == expected
     end
 
@@ -237,7 +237,7 @@ defmodule Modeta.OData.QueryBuilderTest do
 
       result = QueryBuilder.apply_pagination_to_query(base_query, "200", "25")
 
-      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 25 OFFSET 200"
+      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 26 OFFSET 200"
       assert result == expected
     end
 
@@ -246,7 +246,7 @@ defmodule Modeta.OData.QueryBuilderTest do
 
       result = QueryBuilder.apply_pagination_to_query(base_query, 150, 75)
 
-      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 75 OFFSET 150"
+      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 76 OFFSET 150"
       assert result == expected
     end
 
@@ -256,7 +256,7 @@ defmodule Modeta.OData.QueryBuilderTest do
       # Try to request 10000 records (above max of 5000)
       result = QueryBuilder.apply_pagination_to_query(base_query, nil, "10000")
 
-      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 5000 OFFSET 0"
+      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 5001 OFFSET 0"
       assert result == expected
     end
 
@@ -267,7 +267,7 @@ defmodule Modeta.OData.QueryBuilderTest do
       result1 = QueryBuilder.apply_pagination_to_query(base_query, "invalid", nil)
       result2 = QueryBuilder.apply_pagination_to_query(base_query, "-10", nil)
 
-      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1000 OFFSET 0"
+      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1001 OFFSET 0"
       assert result1 == expected
       assert result2 == expected
     end
@@ -280,7 +280,7 @@ defmodule Modeta.OData.QueryBuilderTest do
       result2 = QueryBuilder.apply_pagination_to_query(base_query, nil, "0")
       result3 = QueryBuilder.apply_pagination_to_query(base_query, nil, "-5")
 
-      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1000 OFFSET 0"
+      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1001 OFFSET 0"
       assert result1 == expected
       assert result2 == expected
       assert result3 == expected
@@ -293,7 +293,7 @@ defmodule Modeta.OData.QueryBuilderTest do
       result = QueryBuilder.apply_pagination_to_query(base_query, "123abc", "456def")
 
       # Since both have remaining chars, they default to 0 and 1000
-      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1000 OFFSET 0"
+      expected = "SELECT * FROM (#{base_query}) AS paginated_data LIMIT 1001 OFFSET 0"
       assert result == expected
     end
   end
@@ -318,7 +318,7 @@ defmodule Modeta.OData.QueryBuilderTest do
 
       # Should have filter, then select, then pagination
       assert String.contains?(result, "SELECT name FROM")
-      assert String.contains?(result, "LIMIT 5 OFFSET 0")
+      assert String.contains?(result, "LIMIT 6 OFFSET 0")
     end
   end
 
@@ -349,7 +349,7 @@ defmodule Modeta.OData.QueryBuilderTest do
       # Let's verify the structure contains expected parts
       assert String.contains?(result, "SELECT name, email FROM")
       assert String.contains?(result, "ORDER BY name DESC")
-      assert String.contains?(result, "LIMIT 5 OFFSET 10")
+      assert String.contains?(result, "LIMIT 6 OFFSET 10")
     end
   end
 

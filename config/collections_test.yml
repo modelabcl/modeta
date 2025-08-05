@@ -13,3 +13,8 @@ collections:
       references:
         - col: customer_id
           ref: customers(id)
+    - name: large_test
+      materialized: true
+      origin: "select * from (select row_number() over () as id, 'Row ' || row_number() over () as description from range(1, 10001)) t"
+      primary_key:
+        - id
