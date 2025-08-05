@@ -187,9 +187,7 @@ defmodule Modeta.OData.QueryBuilder do
       end
 
     # Apply LIMIT and OFFSET to query
-    # Use LIMIT top + 1 for accurate pagination detection
-    # ResponseFormatter will check if we got more than 'top' rows to determine if there are more pages
-    "SELECT * FROM (#{base_query}) AS paginated_data LIMIT #{top + 1} OFFSET #{skip}"
+    "SELECT * FROM (#{base_query}) AS paginated_data LIMIT #{top} OFFSET #{skip}"
   end
 
   # Build LEFT JOIN clauses for expanded navigation properties

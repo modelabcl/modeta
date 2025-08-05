@@ -13,7 +13,6 @@ defmodule Modeta.OData.ResponseFormatter do
   concerns from web layer logic.
   """
 
-  import Plug.Conn, only: [get_req_header: 2]
   alias Modeta.Collections
 
   @doc """
@@ -126,33 +125,9 @@ defmodule Modeta.OData.ResponseFormatter do
         skip_param,
         top_param
       ) do
-    # Check if this is Excel/Power Query based on User-Agent
-    # Handle both real Plug.Conn structs and test maps
-    user_agent =
-      case conn do
-        %Plug.Conn{} ->
-          get_req_header(conn, "user-agent") |> List.first() || ""
-
-        _ ->
-          # For tests or other non-conn objects, default to empty string
-          ""
-      end
-
-    is_excel = is_excel_request?(user_agent)
-
-    # Get configuration values (use Excel-specific settings if detected)
-    {default_page_size, max_page_size} =
-      if is_excel do
-        {
-          Application.get_env(:modeta, :excel_default_page_size, 200),
-          Application.get_env(:modeta, :excel_max_page_size, 1000)
-        }
-      else
-        {
-          Application.get_env(:modeta, :default_page_size, 1000),
-          Application.get_env(:modeta, :max_page_size, 5000)
-        }
-      end
+    # Get configuration values
+    default_page_size = Application.get_env(:modeta, :default_page_size, 1000)
+    max_page_size = Application.get_env(:modeta, :max_page_size, 5000)
 
     # Parse current pagination parameters
     current_skip =
@@ -191,25 +166,14 @@ defmodule Modeta.OData.ResponseFormatter do
           default_page_size
       end
 
-    # Check if we have more results than requested (QueryBuilder uses LIMIT current_top + 1)
-    {actual_rows, has_more_results} =
-      if length(rows) > current_top do
-        # We got more rows than requested, so there are more pages
-        # Return only the requested number of rows
-        {Enum.take(rows, current_top), true}
-      else
-        # We got the exact number or fewer rows, so this is the last page
-        {rows, false}
-      end
-
-    # Base response with the actual rows to return
+    # Base response
     base_response = %{
       "@odata.context" => context_url,
-      "value" => actual_rows
+      "value" => rows
     }
 
-    # Add @odata.nextLink only if there are actually more results
-    if has_more_results do
+    # If we got exactly the page size, there might be more results
+    if length(rows) == current_top do
       # Build next page URL
       next_skip = current_skip + current_top
 
@@ -423,18 +387,4 @@ defmodule Modeta.OData.ResponseFormatter do
     value
   end
 
-  # Check if the request is coming from Excel/Power Query
-  # Excel and Power Query have distinct user agent patterns
-  defp is_excel_request?(user_agent) when is_binary(user_agent) do
-    user_agent_lower = String.downcase(user_agent)
-
-    # Common Excel/Power Query user agent patterns
-    String.contains?(user_agent_lower, "excel") or
-      String.contains?(user_agent_lower, "power query") or
-      String.contains?(user_agent_lower, "microsoft office") or
-      String.contains?(user_agent_lower, "powerbi") or
-      String.contains?(user_agent_lower, "odata")
-  end
-
-  defp is_excel_request?(_), do: false
 end
