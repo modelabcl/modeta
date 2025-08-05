@@ -59,7 +59,7 @@ defmodule Modeta.OData.PaginationIntegrationTest do
           conn,
           group_name,
           collection_name,
-          %{},
+          %{"pagination" => "server_driven"},
           skip_param,
           top_param
         )
@@ -130,7 +130,7 @@ defmodule Modeta.OData.PaginationIntegrationTest do
           conn,
           group_name,
           collection_name,
-          %{},
+          %{"pagination" => "server_driven"},
           skip_param,
           top_param
         )
@@ -195,7 +195,7 @@ defmodule Modeta.OData.PaginationIntegrationTest do
           conn,
           group_name,
           collection_name,
-          %{},
+          %{"pagination" => "server_driven"},
           skip_param,
           top_param
         )
@@ -264,7 +264,7 @@ defmodule Modeta.OData.PaginationIntegrationTest do
           conn,
           group_name,
           collection_name,
-          %{},
+          %{"pagination" => "server_driven"},
           skip_param,
           top_param
         )
@@ -286,6 +286,173 @@ defmodule Modeta.OData.PaginationIntegrationTest do
       next_link = response["@odata.nextLink"]
       assert String.contains?(next_link, "$skip=5100")
       assert String.contains?(next_link, "$top=100")
+    end
+  end
+
+  describe "Lazy loading vs Server-driven pagination modes" do
+    test "lazy loading mode does not include @odata.nextLink by default" do
+      # Test with large_test table (10,000 rows)
+      group_name = "sales_test"
+      collection_name = "large_test"
+
+      # Get base query for large_test
+      {:ok, base_query} = Collections.get_query(group_name, collection_name)
+
+      # Request first 100 rows with NO pagination parameter (lazy loading)
+      skip_param = "0"
+      top_param = "100"
+
+      # Build query with pagination (should use LIMIT 101)
+      final_query =
+        QueryBuilder.build_query_with_options(
+          base_query,
+          group_name,
+          collection_name,
+          nil,
+          nil,
+          nil,
+          nil,
+          skip_param,
+          top_param
+        )
+
+      # Execute the query
+      {:ok, result} = Cache.query(final_query)
+      rows = Cache.to_rows(result)
+
+      # Should get 101 rows (100 requested + 1 for detection)
+      assert length(rows) == 101
+
+      # Format the response using ResponseFormatter
+      conn = %{scheme: "https", host: "test.example.com", port: 443}
+      context_url = "https://test.example.com/sales_test/$metadata#large_test"
+
+      formatted_rows = ResponseFormatter.format_rows_as_objects(rows, ["id", "description"])
+
+      # Build response WITHOUT server-driven pagination parameter (lazy loading)
+      response =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          formatted_rows,
+          conn,
+          group_name,
+          collection_name,
+          %{},  # No pagination parameter - should default to lazy loading
+          skip_param,
+          top_param
+        )
+
+      # Should return exactly 100 rows in the response
+      assert length(response["value"]) == 100
+
+      # Should NOT include @odata.nextLink in lazy loading mode
+      refute Map.has_key?(response, "@odata.nextLink")
+    end
+
+    test "server-driven mode includes @odata.nextLink when requested" do
+      # Test with large_test table (10,000 rows)
+      group_name = "sales_test"
+      collection_name = "large_test"
+
+      # Get base query for large_test
+      {:ok, base_query} = Collections.get_query(group_name, collection_name)
+
+      # Request first 100 rows with server-driven pagination parameter
+      skip_param = "0"
+      top_param = "100"
+
+      # Build query with pagination (should use LIMIT 101)
+      final_query =
+        QueryBuilder.build_query_with_options(
+          base_query,
+          group_name,
+          collection_name,
+          nil,
+          nil,
+          nil,
+          nil,
+          skip_param,
+          top_param
+        )
+
+      # Execute the query
+      {:ok, result} = Cache.query(final_query)
+      rows = Cache.to_rows(result)
+
+      # Should get 101 rows (100 requested + 1 for detection)
+      assert length(rows) == 101
+
+      # Format the response using ResponseFormatter
+      conn = %{scheme: "https", host: "test.example.com", port: 443}
+      context_url = "https://test.example.com/sales_test/$metadata#large_test"
+
+      formatted_rows = ResponseFormatter.format_rows_as_objects(rows, ["id", "description"])
+
+      # Build response WITH server-driven pagination parameter
+      response =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          formatted_rows,
+          conn,
+          group_name,
+          collection_name,
+          %{"pagination" => "server_driven"},  # Explicitly request server-driven pagination
+          skip_param,
+          top_param
+        )
+
+      # Should return exactly 100 rows in the response
+      assert length(response["value"]) == 100
+
+      # Should include @odata.nextLink because server-driven pagination was requested
+      assert Map.has_key?(response, "@odata.nextLink")
+
+      # Verify the next link contains correct pagination parameters
+      next_link = response["@odata.nextLink"]
+      assert String.contains?(next_link, "$skip=100")
+      assert String.contains?(next_link, "$top=100")
+    end
+
+    test "supports both $pagination and pagination parameter formats" do
+      group_name = "sales_test"
+      collection_name = "large_test"
+      context_url = "https://test.example.com/sales_test/$metadata#large_test"
+      conn = %{scheme: "https", host: "test.example.com", port: 443}
+      skip_param = "0"
+      top_param = "100"
+
+      # Create mock data that simulates LIMIT + 1 detection (101 rows returned)
+      mock_rows = Enum.map(1..101, fn i -> %{"id" => i, "description" => "Row #{i}"} end)
+
+      # Test with $pagination parameter
+      response1 =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          mock_rows,
+          conn,
+          group_name,
+          collection_name,
+          %{"$pagination" => "server_driven"},
+          skip_param,
+          top_param
+        )
+
+      assert Map.has_key?(response1, "@odata.nextLink")
+
+      # Test with pagination parameter (no $ prefix)
+      response2 =
+        ResponseFormatter.build_paginated_response(
+          context_url,
+          mock_rows,
+          conn,
+          group_name,
+          collection_name,
+          %{"pagination" => "server_driven"},
+          skip_param,
+          top_param
+        )
+
+      assert Map.has_key?(response2, "@odata.nextLink")
     end
   end
 end

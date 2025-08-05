@@ -441,7 +441,7 @@ defmodule ModetaWeb.ODataControllerTest do
 
   describe "pagination support" do
     test "GET /sales_test/customers?$top=3 limits results to specified number", %{conn: conn} do
-      conn = get(conn, ~p"/sales_test/customers?$top=3")
+      conn = get(conn, ~p"/sales_test/customers?$top=3&pagination=server_driven")
 
       assert response = json_response(conn, 200)
 
@@ -462,7 +462,7 @@ defmodule ModetaWeb.ODataControllerTest do
     end
 
     test "GET /sales_test/customers?$skip=5&$top=2 skips and limits correctly", %{conn: conn} do
-      conn = get(conn, ~p"/sales_test/customers?$skip=5&$top=2")
+      conn = get(conn, ~p"/sales_test/customers?$skip=5&$top=2&pagination=server_driven")
 
       assert response = json_response(conn, 200)
 
@@ -577,7 +577,7 @@ defmodule ModetaWeb.ODataControllerTest do
 
     test "GET /sales_test/customers?$skip=0&$top=3&$select=id,name combines pagination with select",
          %{conn: conn} do
-      conn = get(conn, ~p"/sales_test/customers?$skip=0&$top=3&$select=id,name")
+      conn = get(conn, ~p"/sales_test/customers?$skip=0&$top=3&$select=id,name&pagination=server_driven")
 
       assert response = json_response(conn, 200)
 
@@ -901,7 +901,7 @@ defmodule ModetaWeb.ODataControllerTest do
 
     test "GET /sales_test/customers?$orderby=name&$top=3&$skip=2 combines ordering with pagination",
          %{conn: conn} do
-      conn = get(conn, ~p"/sales_test/customers?$orderby=name&$top=3&$skip=2")
+      conn = get(conn, ~p"/sales_test/customers?$orderby=name&$top=3&$skip=2&pagination=server_driven")
 
       assert response = json_response(conn, 200)
 
@@ -1118,7 +1118,7 @@ defmodule ModetaWeb.ODataControllerTest do
 
     test "GET /sales_test/customers?$count=true&$top=3 shows total count with paginated results",
          %{conn: conn} do
-      conn = get(conn, ~p"/sales_test/customers?$count=true&$top=3")
+      conn = get(conn, ~p"/sales_test/customers?$count=true&$top=3&pagination=server_driven")
 
       assert response = json_response(conn, 200)
 
@@ -1183,7 +1183,7 @@ defmodule ModetaWeb.ODataControllerTest do
 
     test "GET /sales_test/customers?$count=true&$orderby=name&$top=5 combines count with ordering and pagination",
          %{conn: conn} do
-      conn = get(conn, ~p"/sales_test/customers?$count=true&$orderby=name&$top=5")
+      conn = get(conn, ~p"/sales_test/customers?$count=true&$orderby=name&$top=5&pagination=server_driven")
 
       assert response = json_response(conn, 200)
 

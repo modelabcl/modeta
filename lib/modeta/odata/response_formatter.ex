@@ -182,8 +182,11 @@ defmodule Modeta.OData.ResponseFormatter do
       "value" => actual_rows
     }
 
-    # Only include @odata.nextLink if we actually detected more results
-    if has_more_results do
+    # Determine if we should include @odata.nextLink based on configuration and request parameters
+    should_include_next_link = should_include_odata_next_link?(has_more_results, params)
+
+    # Only include @odata.nextLink if we detected more results AND the request wants server-driven pagination
+    if should_include_next_link do
       # Build next page URL
       next_skip = current_skip + current_top
 
@@ -192,7 +195,7 @@ defmodule Modeta.OData.ResponseFormatter do
 
       Map.put(base_response, "@odata.nextLink", next_link)
     else
-      # No more results, return base response without nextLink
+      # No more results or lazy loading requested, return base response without nextLink
       base_response
     end
   end
@@ -285,6 +288,45 @@ defmodule Modeta.OData.ResponseFormatter do
 
   def get_odata_content_type(_),
     do: "application/json;odata.metadata=minimal;odata.streaming=true;IEEE754Compatible=false"
+
+  @doc """
+  Determines whether to include @odata.nextLink in the response.
+
+  Returns true if:
+  - There are more results available (has_more_results = true)
+  - AND one of the following conditions is met:
+    - Request includes $pagination=server_driven parameter
+    - Global configuration is set to :server_driven mode
+    - Request includes Prefer: odata.maxpagesize header (indicating server-driven pagination intent)
+
+  For lazy loading (default), returns false to prevent automatic pagination.
+
+  ## Parameters
+  - has_more_results: Boolean indicating if more data exists
+  - params: Request parameters map
+
+  ## Returns
+  - Boolean indicating whether to include @odata.nextLink
+  """
+  def should_include_odata_next_link?(has_more_results, params) do
+    # Don't include next link if there are no more results
+    if not has_more_results do
+      false
+    else
+      # Check if client explicitly requests server-driven pagination
+      server_driven_requested = 
+        Map.get(params, "$pagination") == "server_driven" ||
+        Map.get(params, "pagination") == "server_driven"
+
+      # Check global configuration (default is :lazy)
+      global_pagination_mode = Application.get_env(:modeta, :pagination_mode, :lazy)
+      
+      # Include @odata.nextLink if:
+      # 1. Explicitly requested via parameter, OR
+      # 2. Global config is set to server_driven mode
+      server_driven_requested || global_pagination_mode == :server_driven
+    end
+  end
 
   # Private helper functions
 

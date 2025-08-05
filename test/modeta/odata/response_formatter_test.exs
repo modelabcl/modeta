@@ -326,7 +326,7 @@ defmodule Modeta.OData.ResponseFormatterTest do
     test "includes @odata.nextLink when page is full", %{conn: conn, context_url: context_url} do
       # Create 6 rows (LIMIT + 1 detection: more than requested page size of 5)
       rows = Enum.map(1..6, fn i -> %{"id" => i, "name" => "User #{i}"} end)
-      params = %{"$filter" => "active eq true"}
+      params = %{"$filter" => "active eq true", "pagination" => "server_driven"}
 
       result =
         ResponseFormatter.build_paginated_response(
@@ -384,7 +384,7 @@ defmodule Modeta.OData.ResponseFormatterTest do
           conn,
           "test",
           "customers",
-          %{},
+          %{"pagination" => "server_driven"},
           "20",
           "10"
         )
@@ -410,7 +410,7 @@ defmodule Modeta.OData.ResponseFormatterTest do
           conn,
           "test",
           "customers",
-          %{},
+          %{"pagination" => "server_driven"},
           nil,
           "10000"
         )
@@ -468,7 +468,7 @@ defmodule Modeta.OData.ResponseFormatterTest do
           conn,
           "test",
           "customers",
-          %{},
+          %{"pagination" => "server_driven"},
           nil,
           "invalid"
         )
@@ -480,7 +480,7 @@ defmodule Modeta.OData.ResponseFormatterTest do
           conn,
           "test",
           "customers",
-          %{},
+          %{"pagination" => "server_driven"},
           nil,
           "0"
         )
@@ -504,7 +504,7 @@ defmodule Modeta.OData.ResponseFormatterTest do
           conn,
           "test",
           "customers",
-          %{},
+          %{"pagination" => "server_driven"},
           50,
           15
         )

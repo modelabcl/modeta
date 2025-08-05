@@ -12,7 +12,9 @@ config :modeta,
   collections_file: "collections.yml",
   # OData pagination settings
   default_page_size: 1000,
-  max_page_size: 5000
+  max_page_size: 5000,
+  # Pagination behavior: :lazy (no auto @odata.nextLink) or :server_driven (always include @odata.nextLink)
+  pagination_mode: :lazy
 
 # Configures the endpoint
 config :modeta, ModetaWeb.Endpoint,
